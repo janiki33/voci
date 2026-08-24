@@ -1,7 +1,7 @@
 name: Voci bauen
 
 # Baut bei jedem Push auf main (und auf Knopfdruck) die Windows- und
-# macOS-Fassung und haengt sie an das Release "latest".
+# macOS-Fassung und hängt sie an das Release "latest".
 on:
   push:
     branches: [main]
@@ -26,12 +26,12 @@ jobs:
           python build/make_icons.py
           python build/make_app.py
 
-      # Nuitka statt PyInstaller: PyInstaller haengt die Anwendung an einen
+      # Nuitka statt PyInstaller: PyInstaller hängt die Anwendung an einen
       # vorkompilierten Bootloader, der in jeder damit gebauten EXE weltweit
       # identisch ist - auch in Schadsoftware. Genau darauf schlagen die
       # ML-Heuristiken der Virenscanner an (Trojan:Win32/Sabsik.FLA!ml).
-      # Nuitka uebersetzt den Python-Code stattdessen nach C und kompiliert
-      # ein gewoehnliches Programm ohne diesen gemeinsamen Nenner.
+      # Nuitka übersetzt den Python-Code stattdessen nach C und kompiliert
+      # ein gewöhnliches Programm ohne diesen gemeinsamen Nenner.
       - name: Nuitka installieren
         shell: bash
         run: pip install --upgrade nuitka
@@ -50,8 +50,8 @@ jobs:
             "--product-name=Voci"
             "--file-version=1.0.0.0"
             "--product-version=1.0.0.0"
-            "--file-description=Voci - Vokabeltrainer Franzoesisch/Deutsch"
-            "--copyright=(c) 2026 Janosch Salzgeber"
+            "--file-description=Voci - Vokabeltrainer Französisch/Deutsch"
+            "--copyright=© 2026 Janosch Salzgeber"
           )
           python -m nuitka --mode=onefile "${gemeinsam[@]}" \
             --output-dir=nuitka-einzeldatei --output-filename=Voci.exe voci_main.py
@@ -97,7 +97,7 @@ jobs:
             --workpath pyi-build voci_main.py
           PLIST=dist/Voci.app/Contents/Info.plist
           for eintrag in \
-            "NSHumanReadableCopyright:(c) 2026 Janosch Salzgeber" \
+            "NSHumanReadableCopyright:© 2026 Janosch Salzgeber" \
             "CFBundleGetInfoString:Voci - Vokabeltrainer, Janosch Salzgeber"; do
             schluessel="${eintrag%%:*}"; wert="${eintrag#*:}"
             plutil -insert "$schluessel" -string "$wert" "$PLIST" 2>/dev/null \
@@ -135,7 +135,7 @@ jobs:
             --notes-file - <<'NOTES'
           Automatisch gebaut aus dem aktuellen Stand von `main`.
 
-          | Datei | Fuer wen |
+          | Datei | Für wen |
           |---|---|
           | `Voci.exe` | Windows, eine einzige Datei. Herunterladen, doppelklicken. |
           | `Voci-Windows-Ordner.zip` | Windows-Alternative, falls ein Virenscanner die EXE anmeckert. Entpacken und `Voci.exe` im Ordner starten. |
@@ -144,27 +144,27 @@ jobs:
 
           ### Windows warnt beim ersten Start
 
-          *Der Computer wurde durch Windows geschuetzt* erscheint bei **jedem**
+          *Der Computer wurde durch Windows geschützt* erscheint bei **jedem**
           Programm ohne gekauftes Signaturzertifikat - es ist keine Virenmeldung.
 
-          **Weitere Informationen** anklicken, dann **Trotzdem ausfuehren**.
+          **Weitere Informationen** anklicken, dann **Trotzdem ausführen**.
 
           Wer die Warnung gar nicht erst sehen will: Rechtsklick auf die
-          heruntergeladene `Voci.exe` -> **Eigenschaften** -> unten bei *Sicherheit*
+          heruntergeladene `Voci.exe` → **Eigenschaften** → unten bei *Sicherheit*
           den Haken bei **Zulassen** setzen -> **OK**.
 
           ### macOS warnt beim ersten Start
 
-          *"Voci" kann nicht geoeffnet werden, da Apple es nicht auf Schadsoftware
-          ueberpruefen kann.* Auch das ist keine Virenmeldung, sondern die fehlende
+          *"Voci" kann nicht geöffnet werden, da Apple es nicht auf Schadsoftware
+          überprüfen kann.* Auch das ist keine Virenmeldung, sondern die fehlende
           Apple-Signatur (99 USD pro Jahr).
 
           - **macOS 15 (Sequoia) und neuer:** Doppelklick, Meldung wegklicken, dann
-            **Systemeinstellungen -> Datenschutz & Sicherheit** oeffnen, ganz nach
-            unten scrollen und dort **Dennoch oeffnen** waehlen.
-          - **macOS 14 und aelter:** Rechtsklick (oder Ctrl-Klick) auf `Voci.app`
-            -> **Oeffnen** -> im Dialog nochmals **Oeffnen**.
+            **Systemeinstellungen → Datenschutz & Sicherheit** öffnen, ganz nach
+            unten scrollen und dort **Dennoch öffnen** wählen.
+          - **macOS 14 und älter:** Rechtsklick (oder Ctrl-Klick) auf `Voci.app`
+            → **Öffnen** → im Dialog nochmals **Öffnen**.
           - **Per Terminal:** `xattr -dr com.apple.quarantine /Pfad/zu/Voci.app`
 
-          Beides ist einmal pro heruntergeladener Datei noetig.
+          Beides ist einmal pro heruntergeladener Datei nötig.
           NOTES
