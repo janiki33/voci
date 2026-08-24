@@ -12,8 +12,8 @@ Unter **[Releases → latest](../../releases/latest)** liegen die fertigen Datei
 
 | Datei | Für wen |
 |---|---|
-| `Voci.exe` | Windows, eine einzige Datei. Herunterladen, doppelklicken, **kein Python nötig**. |
-| `Voci-Windows-Ordner.zip` | Windows-Alternative, falls ein Virenscanner die EXE anmeckert. Entpacken, `Voci.exe` im Ordner starten. |
+| **`Voci-Windows-Ordner.zip`** | **Für Windows die empfohlene Fassung.** Entpacken, `Voci.exe` im Ordner starten, **kein Python nötig**. |
+| `Voci.exe` | Windows als eine einzige Datei – bequemer, wird aber von Virenscannern gerne fälschlich gemeldet. |
 | `Voci-macOS.zip` | macOS mit Apple Silicon (M1–M4). Entpacken, `Voci.app` starten. |
 | `Voci.pyw` | Alle Systeme mit installiertem Python – die einzige Variante ganz ohne Warnung. |
 
@@ -77,7 +77,10 @@ Versionsinformationen und keine UPX-Komprimierung.
 Falls ein Scanner trotzdem anschlägt:
 
 1. Nimm die **Ordner-Variante** (`Voci-Windows-Ordner.zip`) — die entpackt sich
-   beim Start nicht selbst und fällt Heuristiken am seltensten auf.
+   beim Start nicht selbst und ist genau dafür da. Die Einzeldatei `Voci.exe`
+   lässt sich dagegen nicht zuverlässig fehlalarmfrei bauen: Dass ein Programm
+   sich beim Start selbst entpackt, ist nun einmal auch ein Malware-Verhalten,
+   und ohne Signatur fehlt der Gegenbeweis.
 2. Oder melde den Fehlalarm dem Hersteller. Für Microsoft Defender geht das hier:
    [Datei zur Analyse einreichen](https://www.microsoft.com/en-us/wdsi/filesubmission).
    Solche Meldungen werden meist innert weniger Tage korrigiert und gelten dann

@@ -53,7 +53,7 @@ jobs:
             "--file-description=Voci - Vokabeltrainer Französisch/Deutsch"
             "--copyright=© 2026 Janosch Salzgeber"
           )
-          python -m nuitka --mode=onefile "${gemeinsam[@]}" \
+          python -m nuitka --mode=onefile --onefile-no-compression "${gemeinsam[@]}" \
             --output-dir=nuitka-einzeldatei --output-filename=Voci.exe voci_main.py
           python -m nuitka --mode=standalone "${gemeinsam[@]}" \
             --output-dir=nuitka-ordner --output-filename=Voci.exe voci_main.py
@@ -137,8 +137,8 @@ jobs:
 
           | Datei | Für wen |
           |---|---|
-          | `Voci.exe` | Windows, eine einzige Datei. Herunterladen, doppelklicken. |
-          | `Voci-Windows-Ordner.zip` | Windows-Alternative, falls ein Virenscanner die EXE anmeckert. Entpacken und `Voci.exe` im Ordner starten. |
+          | **`Voci-Windows-Ordner.zip`** | **Für Windows die empfohlene Fassung.** Entpacken, dann `Voci.exe` im Ordner starten (am besten eine Verknüpfung auf den Desktop legen). |
+          | `Voci.exe` | Windows als eine einzige Datei – bequemer, wird aber von Virenscannern gerne fälschlich gemeldet. Wenn das passiert: die Ordner-Fassung oben nehmen. |
           | `Voci-macOS.zip` | macOS (Apple Silicon). Entpacken, `Voci.app` starten. |
           | `Voci.pyw` | Alle Systeme mit installiertem Python, ganz ohne Warnungen. |
 
@@ -167,4 +167,19 @@ jobs:
           - **Per Terminal:** `xattr -dr com.apple.quarantine /Pfad/zu/Voci.app`
 
           Beides ist einmal pro heruntergeladener Datei nötig.
+
+          ### Virenscanner meldet eine Bedrohung
+
+          Meldet Defender etwas wie `Trojan:Win32/Wacatac.B!ml` oder
+          `Sabsik.FLA!ml`, ist das ein Fehlalarm: Das `!ml` steht für eine
+          Verdachtseinstufung durch ein Lernmodell, nicht für eine erkannte
+          Signatur. Ausgelöst wird sie davon, dass eine Einzeldatei sich beim
+          Start selbst entpackt – ein Verhalten, das auch Schadsoftware zeigt.
+
+          **Dann nimm `Voci-Windows-Ordner.zip`.** Die Fassung entpackt sich
+          nicht selbst und ist genau dafür da.
+
+          Wer helfen will, kann den Fehlalarm bei Microsoft melden:
+          [Datei zur Analyse einreichen](https://www.microsoft.com/en-us/wdsi/filesubmission).
+          Das wird meist innert weniger Tage korrigiert und gilt dann für alle.
           NOTES
