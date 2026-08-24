@@ -36,13 +36,13 @@ Zusätzliche Pakete braucht es keine – tkinter ist bei Python dabei.
 | Rand/Ecke ziehen | Fenster grösser/kleiner ziehen |
 
 Der **Zurück-Knopf springt ein Wort zurück** – Flips und der Sprachumschalter
-zählen nicht als Schritt. Das vorherige Wort erscheint genau so, wie man es
-verlassen hat: War es auf FR sichtbar, kommt es auf FR zurück, auch wenn die
-Startsprache inzwischen auf DE steht. Maximal 10 Wörter; ohne Historie ist der
-Knopf ausgeblendet.
+zählen nicht als Schritt. Das vorherige Wort erscheint in der Sprache, die
+gerade angezeigt wird: Ist man gerade auf DE, kommt es auf DE, egal wie man es
+verlassen hat. Maximal 10 Wörter; ohne Historie ist der Knopf ausgeblendet.
 
-Beim Flip staucht sich die ganze Karte – Knöpfe und Text gehen mit, der Text
-bricht dabei laufend neu um.
+Beim Flip staucht sich die ganze Karte – Knöpfe und Text gehen mit. Die Zeilen
+des Textes stehen dabei fest, es skaliert nur die Schrift, damit nichts
+umspringt.
 
 Das Fenster ist **immer im Vordergrund**, hat keinen Titel, kein Minimieren und
 kein Maximieren, weisse Karte mit schwarzem Text in Graustufen, abgerundete Ecken

@@ -6,14 +6,14 @@ Bedienung:
   Klick auf die Karte        -> flippt FR <-> DE (beide Richtungen)
   Kreis oben links (FR/DE)   -> Startsprache umschalten
   Kreis oben rechts (x)      -> beenden
-  Kreis unten links (<-)     -> ein Wort zurueck (max. 10)
-  Kreis unten rechts (->)    -> naechstes Wort
+  Kreis unten links (<-)     -> ein Wort zurück (max. 10)
+  Kreis unten rechts (->)    -> nächstes Wort
   Karte ziehen               -> Fenster verschieben
-  Rand ziehen                -> Fenster vergroessern/verkleinern
+  Rand ziehen                -> Fenster vergrössern/verkleinern
 
 Wenn das Fenster den Fokus verliert und das aktuelle Wort schon mehr als
-einmal geflippt wurde, kommt nach 5 Sekunden automatisch das naechste Wort
-(ein feiner Balken unten zaehlt runter) - ausser man tabbt vorher zurueck.
+einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
+(ein feiner Balken unten zählt runter) - ausser man tabbt vorher zurück.
 """
 
 import json
@@ -45,12 +45,12 @@ FG = (17, 17, 17)             # Text / Icons
 HOVER = (235, 235, 235)       # Knopf beim Hovern
 BORDER = "#d8d8d8"            # Kartenrand
 TIMER = "#ededed"             # Countdown-Balken (dezent)
-KEY = "#00fe00"               # Farbschluessel fuer runde Ecken (Windows)
+KEY = "#00fe00"               # Farbschlüssel für runde Ecken (Windows)
 
 # ---------------------------------------------------------------- Verhalten
 AUTO_DELAY_MS = 5000          # 5 s bis zum Auto-Weiter
 FLIPS_NEEDED = 2              # "mehr als 1 mal geflippt"
-HISTORY_MAX = 10              # max. 10 Schritte zurueck
+HISTORY_MAX = 10              # max. 10 Schritte zurück
 POLL_MS = 250                 # Fokus-Polling (Windows)
 
 
@@ -72,7 +72,7 @@ def dist_seg(px, py, x1, y1, x2, y2):
 
 
 def render_button(size, radius, disc_color, segs, seg_w, icon_color, bg):
-    """Zeichnet Kreis + Linien-Icon kantengeglaettet (Distanzfeld-AA) in ein
+    """Zeichnet Kreis + Linien-Icon kantengeglättet (Distanzfeld-AA) in ein
     PhotoImage - Tk-Canvas-Formen selbst sind hart gepixelt."""
     cx = cy = size / 2.0
     rows = []
@@ -151,6 +151,7 @@ class Voci:
         self.cnv.pack(fill="both", expand=True)
 
         self.font_word = tkfont.Font(family="Segoe UI", size=15)
+        self._wrapcache = {}
         self.tiny_size = 8
         self.font_tiny = tkfont.Font(family="Segoe UI", size=self.tiny_size)
 
@@ -161,7 +162,7 @@ class Voci:
         self.start_side = "fr"
         self.side = self.start_side
         self.flips = 0
-        self.history = []            # bis zu HISTORY_MAX Zustaende
+        self.history = []            # bis zu HISTORY_MAX Zustände
         self.scale = 1.0             # Flip-Animation
         self.animating = False
         self.hover = None
@@ -244,9 +245,9 @@ class Voci:
         return VOCAB[self.deck[self.pos]]
 
     def remember(self):
-        """Wort-Zustand merken - nur Wortwechsel landen in der Historie,
-        Flips und der Sprachumschalter nicht."""
-        self.history.append((self.pos, self.side, self.flips))
+        """Wort merken - nur Wortwechsel landen in der Historie, Flips und der
+        Sprachumschalter nicht."""
+        self.history.append(self.pos)
         if len(self.history) > HISTORY_MAX:
             self.history.pop(0)
 
@@ -263,15 +264,16 @@ class Voci:
         self.animate(commit)
 
     def go_back(self):
-        """Ein Wort zurueck - genau so, wie es verlassen wurde (gleiche Seite,
-        auch wenn die Startsprache inzwischen umgestellt wurde)."""
+        """Ein Wort zurück, in der gerade sichtbaren Sprache: steht man auf DE,
+        kommt auch das vorherige Wort auf DE."""
         if not self.history or self.animating:
             return
         self.cancel_auto(redraw=False)
-        pos, side, flips = self.history.pop()
+        pos = self.history.pop()
 
         def commit():
-            self.pos, self.side, self.flips = pos, side, flips
+            self.pos = pos
+            self.flips = 0
         self.animate(commit)
 
     def flip(self):
@@ -359,13 +361,11 @@ class Voci:
         def sx(x):                       # x-Position mitflippen lassen
             return cx + (x - cx) * self.scale
 
-        # Der Text staucht mit der Karte mit und bricht dabei neu um.
-        text = self.word[self.side]
-        self.font_word.configure(
-            size=max(1, int(round(self.word_size(text) * self.scale))))
-        c.create_text(cx, h / 2.0, text=text, font=self.font_word, fill=hexc(FG),
-                      width=max(20, (2 * half) - 70 * self.k * self.scale),
-                      justify="center")
+        # Der Text staucht mit der Karte mit; die Zeilen stehen dabei fest.
+        lines, full = self.wrapped(self.word[self.side])
+        self.font_word.configure(size=max(1, int(round(full * self.scale))))
+        c.create_text(cx, h / 2.0, text=lines, font=self.font_word,
+                      fill=hexc(FG), justify="center")
 
         rest = self.scale > 0.999
         for tag, bx, by, r in self.buttons():
@@ -395,6 +395,59 @@ class Voci:
                 y = h - 11 * self.k
                 c.create_rectangle(cx - bw / 2, y, cx + bw / 2, y + 3 * self.k,
                                    fill=TIMER, width=0)
+
+    def wrapped(self, text):
+        """Zeilenumbruch einmal bei voller Kartenbreite bestimmen und merken.
+        Während des Flips bleiben die Zeilen dann stehen - es skaliert nur die
+        Schrift, statt dass der Text bei jedem Frame neu umbricht."""
+        size = self.word_size(text)
+        width = max(40, self.w - 78 * self.k)
+        key = (text, size, int(width))
+        cached = self._wrapcache.get(key)
+        if cached is not None:
+            return cached, size
+        self.font_word.configure(size=size)
+        measure = self.font_word.measure
+        lines, cur = [], ""
+        for token in text.split(" "):
+            for part in self._split_long(token, width, measure):
+                probe = part if not cur else cur + " " + part
+                if cur and measure(probe) > width:
+                    lines.append(cur)
+                    cur = part
+                else:
+                    cur = probe
+        if cur:
+            lines.append(cur)
+        out = "\n".join(lines)
+        self._wrapcache[key] = out
+        return out, size
+
+    @staticmethod
+    def _split_long(token, width, measure):
+        """Überlange Einzelwörter zerlegen - erst am Bindestrich, sonst hart."""
+        if measure(token) <= width:
+            return [token]
+        parts, cur = [], ""
+        for piece in token.replace("-", "-\x00").split("\x00"):
+            if cur and measure(cur + piece) > width:
+                parts.append(cur)
+                cur = piece
+            else:
+                cur += piece
+        if cur:
+            parts.append(cur)
+        out = []
+        for part in parts:
+            while measure(part) > width and len(part) > 1:
+                n = len(part)
+                while n > 1 and measure(part[:n]) > width:
+                    n -= 1
+                out.append(part[:n])
+                part = part[n:]
+            if part:
+                out.append(part)
+        return out
 
     def word_size(self, text):
         base = min(self.w / 24.0, self.h / 14.0) / self.k
@@ -508,6 +561,7 @@ class Voci:
             return
         if (e.width, e.height) != (self.w, self.h):
             self.w, self.h = e.width, e.height
+            self._wrapcache.clear()
             self.draw()
 
 
