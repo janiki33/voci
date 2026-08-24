@@ -51,7 +51,9 @@ def ausduennen(wurzel, vorsichtig=False):
 
 def _in_tcltk(ordner):
     """Nur innerhalb der Tcl/Tk-Daten aufräumen, nicht irgendwo sonst."""
-    return any(teil.lower().startswith(("tcl", "tk")) for teil in ordner.parts)
+    # macOS nennt die Ordner "_tcl_data"/"_tk_data", Windows "tcl"/"tk8.6".
+    return any(teil.lower().lstrip("_").startswith(("tcl", "tk"))
+               for teil in ordner.parts)
 
 
 if __name__ == "__main__":
