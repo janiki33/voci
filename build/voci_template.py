@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Voci - Vokabel-Flashcard, immer im Vordergrund.
+Voci – Vokabel-Flashcard, immer im Vordergrund. Läuft unter Windows, macOS
+und Linux.
 
 Bedienung:
   Klick auf die Karte        -> flippt FR <-> DE (beide Richtungen)
@@ -13,7 +14,7 @@ Bedienung:
 
 Wenn das Fenster den Fokus verliert und das aktuelle Wort schon mehr als
 einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
-(ein feiner Balken unten zählt runter) - ausser man tabbt vorher zurück.
+(ein feiner Balken unten zählt runter) – ausser man tabbt vorher zurück.
 """
 
 import json
@@ -26,6 +27,7 @@ import tkinter.font as tkfont
 VOCAB = json.loads(r'''__VOCAB_JSON__''')
 
 IS_WIN = sys.platform.startswith("win")
+IS_MAC = sys.platform == "darwin"
 
 # DPI-Awareness MUSS vor dem ersten Tk-Fenster gesetzt werden, sonst skaliert
 # Windows das Fenster als Bitmap hoch -> alles sieht verpixelt/unscharf aus.
@@ -46,12 +48,27 @@ HOVER = (235, 235, 235)       # Knopf beim Hovern
 BORDER = "#d8d8d8"            # Kartenrand
 TIMER = "#ededed"             # Countdown-Balken (dezent)
 KEY = "#00fe00"               # Farbschlüssel für runde Ecken (Windows)
+FALLBACK_VOID = "#bdbdbd"     # falls die Plattform keine Transparenz kann
 
 # ---------------------------------------------------------------- Verhalten
 AUTO_DELAY_MS = 5000          # 5 s bis zum Auto-Weiter
 FLIPS_NEEDED = 2              # "mehr als 1 mal geflippt"
-HISTORY_MAX = 10              # max. 10 Schritte zurück
+HISTORY_MAX = 10              # max. 10 Wörter zurück
 POLL_MS = 250                 # Fokus-Polling (Windows)
+
+CURSOR_HAND = "pointinghand" if IS_MAC else "hand2"
+if IS_MAC:
+    CURSOR_EDGE = {"n": "resizeupdown", "s": "resizeupdown",
+                   "w": "resizeleftright", "e": "resizeleftright"}
+else:
+    CURSOR_EDGE = {"n": "sb_v_double_arrow", "s": "sb_v_double_arrow",
+                   "w": "sb_h_double_arrow", "e": "sb_h_double_arrow",
+                   "nw": "top_left_corner", "ne": "top_right_corner",
+                   "sw": "bottom_left_corner", "se": "bottom_right_corner"}
+
+FONT_WUNSCH = (("SF Pro Text", "Helvetica Neue", "Lucida Grande") if IS_MAC else
+               ("Segoe UI", "Tahoma") if IS_WIN else
+               ("DejaVu Sans", "Liberation Sans", "Arial"))
 
 
 def hexc(c):
@@ -73,7 +90,7 @@ def dist_seg(px, py, x1, y1, x2, y2):
 
 def render_button(size, radius, disc_color, segs, seg_w, icon_color, bg):
     """Zeichnet Kreis + Linien-Icon kantengeglättet (Distanzfeld-AA) in ein
-    PhotoImage - Tk-Canvas-Formen selbst sind hart gepixelt."""
+    PhotoImage – Tk-Canvas-Formen selbst sind unter Windows hart gepixelt."""
     cx = cy = size / 2.0
     rows = []
     for y in range(size):
@@ -123,10 +140,9 @@ class Voci:
         self.root.overrideredirect(True)          # kein Titel, kein Min/Max
         self.root.attributes("-topmost", True)    # immer im Vordergrund
 
-        # Alles in echten Bildschirmpixeln rechnen (DPI-Faktor).
+        # Alles in echten Bildschirmpixeln rechnen (DPI-Faktor unter Windows).
         dpi = self.root.winfo_fpixels("1i")
         self.k = max(1.0, dpi / 96.0)
-        self.root.tk.call("tk", "scaling", dpi / 72.0)
 
         self.w = int(380 * self.k)
         self.h = int(230 * self.k)
@@ -138,22 +154,18 @@ class Voci:
         self.corner = int(20 * self.k)            # Eckenradius der Karte
         self.root.geometry("%dx%d+%d+%d" % (self.w, self.h, 140, 140))
 
-        self.keyed = False
-        if IS_WIN:
-            try:
-                self.root.attributes("-transparentcolor", KEY)
-                self.keyed = True
-            except tk.TclError:
-                pass
-        self.void = KEY if self.keyed else "#bdbdbd"
-
-        self.cnv = tk.Canvas(self.root, bd=0, highlightthickness=0, bg=self.void)
+        self.void = self._setup_transparency()
+        try:
+            self.cnv = tk.Canvas(self.root, bd=0, highlightthickness=0, bg=self.void)
+        except tk.TclError:                       # Plattform mag den Farbnamen nicht
+            self.void = FALLBACK_VOID
+            self.cnv = tk.Canvas(self.root, bd=0, highlightthickness=0, bg=self.void)
         self.cnv.pack(fill="both", expand=True)
 
-        self.font_word = tkfont.Font(family="Segoe UI", size=15)
-        self._wrapcache = {}
-        self.tiny_size = 8
-        self.font_tiny = tkfont.Font(family="Segoe UI", size=self.tiny_size)
+        familie = self._pick_font()
+        self.tiny_px = int(11 * self.k)
+        self.font_word = tkfont.Font(family=familie, size=-int(20 * self.k))
+        self.font_tiny = tkfont.Font(family=familie, size=-self.tiny_px)
 
         # Zustand
         self.deck = list(range(len(VOCAB)))
@@ -162,14 +174,16 @@ class Voci:
         self.start_side = "fr"
         self.side = self.start_side
         self.flips = 0
-        self.history = []            # bis zu HISTORY_MAX Zustände
+        self.history = []            # bis zu HISTORY_MAX Wortpositionen
         self.scale = 1.0             # Flip-Animation
         self.animating = False
         self.hover = None
         self.auto_job = None
         self.countdown_frac = None
         self.was_active = True
+        self.seen_focus = False      # hat die Plattform je Fokus gemeldet?
         self.imgcache = {}
+        self._wrapcache = {}
 
         self._drag = None
         self._resize = None
@@ -181,13 +195,41 @@ class Voci:
         if IS_WIN:
             self._init_win_focus_poll()
         else:
-            self.root.bind("<FocusIn>", lambda e: self.set_active(True))
+            self.root.bind("<FocusIn>", self._on_focus_in)
             self.root.bind("<FocusOut>", lambda e: self.set_active(False))
 
+        self.root.lift()
         self.draw()
         self.root.mainloop()
 
-    # ------------------------------------------------------------ Fokus
+    # ------------------------------------------------------------ Plattform
+    def _setup_transparency(self):
+        """Runde Ecken: Windows blendet eine Schlüsselfarbe aus, macOS kann das
+        Fenster selbst transparent zeichnen, sonst bleibt ein grauer Rahmen."""
+        self.keyed = False
+        if IS_WIN:
+            try:
+                self.root.attributes("-transparentcolor", KEY)
+                self.keyed = True
+                return KEY
+            except tk.TclError:
+                return FALLBACK_VOID
+        if IS_MAC:
+            try:
+                self.root.attributes("-transparent", True)
+                self.root.configure(bg="systemTransparent")
+                return "systemTransparent"
+            except tk.TclError:
+                return FALLBACK_VOID
+        return FALLBACK_VOID
+
+    def _pick_font(self):
+        vorhanden = set(tkfont.families(self.root))
+        for name in FONT_WUNSCH:
+            if name in vorhanden:
+                return name
+        return tkfont.nametofont("TkDefaultFont").actual("family")
+
     def _init_win_focus_poll(self):
         self._u32 = ctypes.windll.user32
         self.root.update_idletasks()
@@ -207,11 +249,18 @@ class Voci:
             pass
         self.root.after(POLL_MS, self._poll_focus)
 
+    def _on_focus_in(self, _event):
+        self.seen_focus = True
+        self.set_active(True)
+
     def set_active(self, active):
         if active and not self.was_active:
             self.cancel_auto()
         elif not active and self.was_active and self.flips >= FLIPS_NEEDED:
-            self.start_auto()
+            # Ohne verlässliche Fokusmeldungen lieber gar nicht automatisch
+            # weiterspringen, als ständig ungefragt weiterzuspringen.
+            if IS_WIN or self.seen_focus:
+                self.start_auto()
         self.was_active = active
 
     # ------------------------------------------------------------ Auto-Weiter
@@ -245,7 +294,7 @@ class Voci:
         return VOCAB[self.deck[self.pos]]
 
     def remember(self):
-        """Wort merken - nur Wortwechsel landen in der Historie, Flips und der
+        """Wort merken – nur Wortwechsel landen in der Historie, Flips und der
         Sprachumschalter nicht."""
         self.history.append(self.pos)
         if len(self.history) > HISTORY_MAX:
@@ -363,7 +412,7 @@ class Voci:
 
         # Der Text staucht mit der Karte mit; die Zeilen stehen dabei fest.
         lines, full = self.wrapped(self.word[self.side])
-        self.font_word.configure(size=max(1, int(round(full * self.scale))))
+        self.font_word.configure(size=-max(1, int(round(full * self.scale))))
         c.create_text(cx, h / 2.0, text=lines, font=self.font_word,
                       fill=hexc(FG), justify="center")
 
@@ -385,7 +434,7 @@ class Voci:
                                   fill=hexc(FG), width=lw, capstyle="round")
             if tag == "lang":
                 self.font_tiny.configure(
-                    size=max(1, int(round(self.tiny_size * self.scale))))
+                    size=-max(1, int(round(self.tiny_px * self.scale))))
                 c.create_text(x, by, text=self.start_side.upper(),
                               font=self.font_tiny, fill=hexc(FG))
 
@@ -398,7 +447,7 @@ class Voci:
 
     def wrapped(self, text):
         """Zeilenumbruch einmal bei voller Kartenbreite bestimmen und merken.
-        Während des Flips bleiben die Zeilen dann stehen - es skaliert nur die
+        Während des Flips bleiben die Zeilen dann stehen – es skaliert nur die
         Schrift, statt dass der Text bei jedem Frame neu umbricht."""
         size = self.word_size(text)
         width = max(40, self.w - 78 * self.k)
@@ -406,7 +455,7 @@ class Voci:
         cached = self._wrapcache.get(key)
         if cached is not None:
             return cached, size
-        self.font_word.configure(size=size)
+        self.font_word.configure(size=-size)
         measure = self.font_word.measure
         lines, cur = [], ""
         for token in text.split(" "):
@@ -425,7 +474,7 @@ class Voci:
 
     @staticmethod
     def _split_long(token, width, measure):
-        """Überlange Einzelwörter zerlegen - erst am Bindestrich, sonst hart."""
+        """Überlange Einzelwörter zerlegen – erst am Bindestrich, sonst hart."""
         if measure(token) <= width:
             return [token]
         parts, cur = [], ""
@@ -450,7 +499,9 @@ class Voci:
         return out
 
     def word_size(self, text):
-        base = min(self.w / 24.0, self.h / 14.0) / self.k
+        """Schriftgrösse in Pixeln – plattformunabhängig, weil negative
+        Tk-Grössen Pixel statt Punkte bedeuten."""
+        base = min(self.w / 19.0, self.h / 11.5)
         n = len(text)
         if n > 70:
             base *= 0.60
@@ -492,13 +543,9 @@ class Voci:
         edge = self.hit_edge(e.x, e.y)
         tag = None if edge else self.hit_button(e.x, e.y)
         if edge:
-            self.set_cursor({"n": "sb_v_double_arrow", "s": "sb_v_double_arrow",
-                             "w": "sb_h_double_arrow", "e": "sb_h_double_arrow",
-                             "nw": "top_left_corner", "ne": "top_right_corner",
-                             "sw": "bottom_left_corner",
-                             "se": "bottom_right_corner"}.get(edge, ""))
+            self.set_cursor(CURSOR_EDGE.get(edge, ""))
         else:
-            self.set_cursor("hand2" if tag else "")
+            self.set_cursor(CURSOR_HAND if tag else "")
         if tag != self.hover:
             self.hover = tag
             self.draw()

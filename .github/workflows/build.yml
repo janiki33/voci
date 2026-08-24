@@ -1,7 +1,7 @@
 name: Voci bauen
 
-# Baut bei jedem Push auf main (und auf Knopfdruck) die Windows-EXE und
-# haengt sie zusammen mit Voci.pyw an das Release "latest".
+# Baut bei jedem Push auf main (und auf Knopfdruck) die Windows- und
+# macOS-Fassung und haengt sie an das Release "latest".
 on:
   push:
     branches: [main]
@@ -15,48 +15,132 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Vokabeln in Voci.pyw einbetten
+      - name: Vokabeln und Icons erzeugen
         shell: bash
-        run: python build/make_app.py
+        run: |
+          pip install --upgrade pillow
+          python build/make_icons.py
+          python build/make_app.py
 
       - name: PyInstaller installieren
         shell: bash
         run: pip install --upgrade pyinstaller
 
+      # Icon, Versionsinfos und kein UPX: senkt Heuristik-Fehlalarme der
+      # Virenscanner. Zusaetzlich die entpackte Ordnerfassung, die von
+      # Scannern deutlich seltener angefasst wird als die Einzeldatei.
       - name: EXE bauen
         shell: bash
         run: |
           cp Voci.pyw voci_main.py
-          pyinstaller --onefile --windowed --name Voci voci_main.py
+          pyinstaller --onefile --windowed --noupx --name Voci \
+            --icon assets/voci.ico --version-file build/version_info.txt \
+            --distpath dist-einzeldatei --workpath pyi-build voci_main.py
+          pyinstaller --onedir --windowed --noupx --name Voci \
+            --icon assets/voci.ico --version-file build/version_info.txt \
+            --distpath dist-ordner --workpath pyi-build voci_main.py
 
       - name: Dateien sammeln
-        shell: bash
+        shell: pwsh
         run: |
-          mkdir -p out
-          cp dist/Voci.exe out/Voci.exe
-          cp Voci.pyw out/Voci.pyw
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item dist-einzeldatei/Voci.exe out/Voci.exe
+          Copy-Item Voci.pyw out/Voci.pyw
+          Compress-Archive -Path dist-ordner/Voci -DestinationPath out/Voci-Windows-Ordner.zip
 
-      - name: Als Workflow-Artefakt hochladen
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: Voci
+          name: windows
           path: out/
 
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Vokabeln und Icons erzeugen
+        run: |
+          pip install --upgrade pillow
+          python build/make_icons.py
+          python build/make_app.py
+
+      - name: PyInstaller installieren
+        run: pip install --upgrade pyinstaller
+
+      - name: App-Bundle bauen
+        run: |
+          cp Voci.pyw voci_main.py
+          pyinstaller --windowed --noupx --name Voci \
+            --icon assets/voci.icns --osx-bundle-identifier ch.janiki33.voci \
+            --workpath pyi-build voci_main.py
+          mkdir -p out
+          ditto -c -k --keepParent dist/Voci.app out/Voci-macOS.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: out/
+
+  release:
+    needs: [windows, macos]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
       - name: Release "latest" aktualisieren
-        if: github.ref == 'refs/heads/main'
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
         run: |
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest out/Voci.exe out/Voci.pyw \
+          ls -la out
+          gh release delete latest --repo "$REPO" --yes --cleanup-tag || true
+          gh release create latest out/* --repo "$REPO" \
+            --target "$GITHUB_SHA" \
             --title "Voci - neuste Version" \
-            --notes "Automatisch gebaut aus Commit ${{ github.sha }}.
+            --notes-file - <<'NOTES'
+          Automatisch gebaut aus dem aktuellen Stand von `main`.
 
-          - **Voci.exe** - einfach herunterladen und starten, kein Python noetig.
-          - **Voci.pyw** - die Python-Variante (braucht ein installiertes Python)."
+          | Datei | Fuer wen |
+          |---|---|
+          | `Voci.exe` | Windows, eine einzige Datei. Herunterladen, doppelklicken. |
+          | `Voci-Windows-Ordner.zip` | Windows-Alternative, falls ein Virenscanner die EXE anmeckert. Entpacken und `Voci.exe` im Ordner starten. |
+          | `Voci-macOS.zip` | macOS (Apple Silicon). Entpacken, `Voci.app` starten. |
+          | `Voci.pyw` | Alle Systeme mit installiertem Python, ganz ohne Warnungen. |
+
+          ### Windows warnt beim ersten Start
+
+          *Der Computer wurde durch Windows geschuetzt* erscheint bei **jedem**
+          Programm ohne gekauftes Signaturzertifikat - es ist keine Virenmeldung.
+
+          **Weitere Informationen** anklicken, dann **Trotzdem ausfuehren**.
+
+          Wer die Warnung gar nicht erst sehen will: Rechtsklick auf die
+          heruntergeladene `Voci.exe` -> **Eigenschaften** -> unten bei *Sicherheit*
+          den Haken bei **Zulassen** setzen -> **OK**.
+
+          ### macOS warnt beim ersten Start
+
+          *"Voci" kann nicht geoeffnet werden, da Apple es nicht auf Schadsoftware
+          ueberpruefen kann.* Auch das ist keine Virenmeldung, sondern die fehlende
+          Apple-Signatur (99 USD pro Jahr).
+
+          - **macOS 15 (Sequoia) und neuer:** Doppelklick, Meldung wegklicken, dann
+            **Systemeinstellungen -> Datenschutz & Sicherheit** oeffnen, ganz nach
+            unten scrollen und dort **Dennoch oeffnen** waehlen.
+          - **macOS 14 und aelter:** Rechtsklick (oder Ctrl-Klick) auf `Voci.app`
+            -> **Oeffnen** -> im Dialog nochmals **Oeffnen**.
+          - **Per Terminal:** `xattr -dr com.apple.quarantine /Pfad/zu/Voci.app`
+
+          Beides ist einmal pro heruntergeladener Datei noetig.
+          NOTES

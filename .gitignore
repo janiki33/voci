@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+dist*/
+pyi-build/
+*.spec
+voci_main.py
