@@ -26,9 +26,16 @@ jobs:
           python build/make_icons.py
           python build/make_app.py
 
-      - name: PyInstaller installieren
+      # Den Bootloader aus dem Quellcode bauen statt das fertige Binaerstueck zu
+      # nehmen: Der mitgelieferte Bootloader ist in jeder PyInstaller-EXE der
+      # Welt identisch und steckt deshalb in den Signaturdatenbanken der
+      # Virenscanner. Selbst kompiliert ist er einmalig und faellt nicht auf.
+      - name: PyInstaller mit eigenem Bootloader bauen
         shell: bash
-        run: pip install --upgrade pyinstaller
+        run: |
+          pip install --upgrade setuptools wheel
+          pip install --upgrade --no-binary pyinstaller pyinstaller
+          python -c "import PyInstaller; print('PyInstaller', PyInstaller.__version__)"
 
       # Icon, Versionsinfos und kein UPX: senkt Heuristik-Fehlalarme der
       # Virenscanner. Zusaetzlich die entpackte Ordnerfassung, die von

@@ -59,11 +59,26 @@ die Warnung nur über den jeweiligen App-Store: Laut
 bauen selbst gekaufte OV- und EV-Zertifikate ihre Reputation erst über Zeit auf —
 seit 2024 umgeht auch EV die SmartScreen-Warnung nicht mehr sofort.
 
-Gegen **Virenscanner-Fehlalarme** (etwas anderes als die Warnungen oben) ist die
-EXE bereits so gebaut, wie es empfohlen wird: mit Icon, mit Versionsinformationen
-und ohne UPX-Komprimierung. Falls ein Scanner trotzdem anschlägt, nimm die
-Ordner-Variante — die packt sich beim Start nicht selbst aus und fällt Heuristiken
-seltener auf.
+### Virenscanner-Fehlalarme
+
+Etwas anderes als die Warnungen oben: Manche Scanner melden bei mit PyInstaller
+gebauten Programmen eine Bedrohung, obwohl keine da ist. Dagegen ist die EXE
+bereits so gebaut, wie es empfohlen wird:
+
+- eigenes Icon und vollständige Versionsinformationen,
+- keine UPX-Komprimierung,
+- **PyInstaller-Bootloader aus dem Quellcode gebaut.** Der mitgelieferte
+  Bootloader ist in jeder PyInstaller-EXE der Welt identisch und steckt deshalb
+  in den Signaturdatenbanken vieler Scanner. Selbst kompiliert ist er einmalig.
+
+Falls ein Scanner trotzdem anschlägt:
+
+1. Nimm die **Ordner-Variante** (`Voci-Windows-Ordner.zip`) — die packt sich beim
+   Start nicht selbst aus und fällt Heuristiken deutlich seltener auf.
+2. Oder melde den Fehlalarm dem Hersteller. Für Microsoft Defender geht das hier:
+   [Datei zur Analyse einreichen](https://www.microsoft.com/en-us/wdsi/filesubmission).
+   Solche Meldungen werden meist innert weniger Tage korrigiert.
+3. Ganz ohne EXE: die `Voci.pyw` mit installiertem Python starten.
 
 ## Bedienung
 
