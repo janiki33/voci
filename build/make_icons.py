@@ -37,6 +37,49 @@ def flagge(size, ss=8):
     return img.resize((size, size), Image.LANCZOS)
 
 
+def ico(pfad, quelle):
+    """ICO selbst schreiben: kleine Grössen als klassisches BMP, nur 256 als PNG.
+    Pillow legt sonst alles PNG-komprimiert ab, und PNG-Icons zeigt der Windows-
+    Explorer in kleinen Grössen nicht überall zuverlässig an."""
+    import io
+    groessen = [16, 24, 32, 48, 64, 128, 256]
+    eintraege = []
+    for g in groessen:
+        bild = quelle.resize((g, g), Image.LANCZOS).convert("RGBA")
+        if g >= 256:
+            puffer = io.BytesIO()
+            bild.save(puffer, "PNG")
+            eintraege.append((g, puffer.getvalue()))
+            continue
+        px = bild.load()
+        # BITMAPINFOHEADER: Höhe doppelt, weil Farb- und Maskenbild zusammen
+        kopf = struct.pack("<IiiHHIIiiII", 40, g, g * 2, 1, 32, 0, 0, 0, 0, 0, 0)
+        farben = bytearray()
+        for y in range(g - 1, -1, -1):              # BMP steht auf dem Kopf
+            for x in range(g):
+                r, gr, b, a = px[x, y]
+                farben += bytes((b, gr, r, a))
+        maskenbreite = ((g + 31) // 32) * 4         # Zeilen auf 4 Byte aufgefüllt
+        maske = bytearray()
+        for y in range(g - 1, -1, -1):
+            bits = bytearray(maskenbreite)
+            for x in range(g):
+                if px[x, y][3] == 0:                # 1 = transparent
+                    bits[x // 8] |= 0x80 >> (x % 8)
+            maske += bits
+        eintraege.append((g, kopf + bytes(farben) + bytes(maske)))
+
+    kopf = struct.pack("<HHH", 0, 1, len(eintraege))
+    offset = 6 + 16 * len(eintraege)
+    verzeichnis, daten = b"", b""
+    for g, roh in eintraege:
+        verzeichnis += struct.pack("<BBBBHHII", g % 256, g % 256, 0, 0, 1, 32,
+                                   len(roh), offset)
+        offset += len(roh)
+        daten += roh
+    pfad.write_bytes(kopf + verzeichnis + daten)
+
+
 def icns(pfad, quelle):
     """ICNS aus PNG-Blöcken schreiben (kein macOS-Werkzeug nötig)."""
     typen = [(b"icp4", 16), (b"icp5", 32), (b"ic11", 32), (b"ic12", 64),
@@ -54,8 +97,7 @@ def icns(pfad, quelle):
 
 gross = flagge(1024)
 gross.save(OUT / "voci.png")
-gross.save(OUT / "voci.ico",
-           sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+ico(OUT / "voci.ico", gross)
 icns(OUT / "voci.icns", gross)
 for p in ("voci.png", "voci.ico", "voci.icns"):
     print(p, (OUT / p).stat().st_size, "Bytes")
