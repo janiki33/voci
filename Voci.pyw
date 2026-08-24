@@ -249,6 +249,8 @@ class Voci:
             self.history.pop(0)
 
     def next_word(self):
+        if self.animating:
+            return
         self.cancel_auto(redraw=False)
         self.remember()
 
@@ -260,7 +262,7 @@ class Voci:
 
     def go_back(self):
         """Macht die letzte Aktion rueckgaengig: erst den Flip, dann das Wort."""
-        if not self.history:
+        if not self.history or self.animating:
             return
         self.cancel_auto(redraw=False)
         pos, side, flips = self.history.pop()
@@ -270,6 +272,8 @@ class Voci:
         self.animate(commit)
 
     def flip(self):
+        if self.animating:
+            return
         self.cancel_auto(redraw=False)
         self.remember()
 
@@ -279,6 +283,8 @@ class Voci:
         self.animate(commit)
 
     def toggle_start(self):
+        if self.animating:
+            return
         self.start_side = "de" if self.start_side == "fr" else "fr"
         if self.flips == 0 and self.side != self.start_side:
             self.remember()
@@ -352,11 +358,12 @@ class Voci:
         def sx(x):                       # x-Position mitflippen lassen
             return cx + (x - cx) * self.scale
 
-        text = self.word[self.side]
-        self.font_word.configure(size=self.word_size(text))
-        c.create_text(cx, h / 2.0, text=text, font=self.font_word,
-                      fill=hexc(FG), width=max(60, (2 * half) - 70 * self.k),
-                      justify="center")
+        if self.scale > 0.55:
+            text = self.word[self.side]
+            self.font_word.configure(size=self.word_size(text))
+            c.create_text(cx, h / 2.0, text=text, font=self.font_word,
+                          fill=hexc(FG), width=max(60, (2 * half) - 70 * self.k),
+                          justify="center")
 
         rest = self.scale > 0.999
         for tag, bx, by, r in self.buttons():
