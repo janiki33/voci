@@ -97,7 +97,8 @@ def icns(pfad, quelle):
 
 gross = flagge(1024)
 gross.save(OUT / "voci.png")
+gross.resize((64, 64), Image.LANCZOS).save(OUT / "voci64.png")
 ico(OUT / "voci.ico", gross)
 icns(OUT / "voci.icns", gross)
-for p in ("voci.png", "voci.ico", "voci.icns"):
+for p in ("voci.png", "voci64.png", "voci.ico", "voci.icns"):
     print(p, (OUT / p).stat().st_size, "Bytes")

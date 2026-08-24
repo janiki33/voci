@@ -130,6 +130,14 @@ Beim Push auf `main` baut GitHub Actions daraus automatisch eine neue `Voci.exe`
 
 Quelle der Vokabeln: `Voca_étape_R1_BMV_B_2025` (Word-Dokument, Tabelle FR|DE).
 
+## Ordnergrösse
+
+Die Windows-Ordnerfassung enthält Tcl/Tk, das Zeitzonendaten, Sprachkataloge
+und rund 80 Zeichensatztabellen mitbringt — über 700 Dateien, von denen Voci
+keine einzige braucht. `build/prune_tcltk.py` räumt die beim Bauen weg
+(944 → gut 200 Dateien). Für macOS läuft dasselbe Skript mit `--vorsichtig`,
+dort fallen nur Zeitzonen und Sprachkataloge weg.
+
 ## Icon
 
 Das App-Icon (Trikolore) wird aus `build/make_icons.py` erzeugt und liegt als

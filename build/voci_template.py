@@ -26,6 +26,10 @@ import tkinter.font as tkfont
 
 VOCAB = json.loads(r'''__VOCAB_JSON__''')
 
+# Fenstersymbol (Trikolore) als eingebettetes PNG - ohne das zeigt Tk in der
+# Taskleiste sein eigenes Feder-Logo.
+ICON_B64 = "__ICON_B64__"
+
 IS_WIN = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"
 
@@ -40,6 +44,13 @@ if IS_WIN:
             ctypes.windll.user32.SetProcessDPIAware()
         except Exception:
             pass
+    try:
+        # Eigene Kennung, damit die Taskleiste das Fenstersymbol verwendet und
+        # nicht das des startenden Programms.
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "ch.janiki33.voci")
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------- Farben
 BG = (255, 255, 255)          # Karte
@@ -139,6 +150,11 @@ class Voci:
         self.root = tk.Tk()
         self.root.overrideredirect(True)          # kein Titel, kein Min/Max
         self.root.attributes("-topmost", True)    # immer im Vordergrund
+        try:
+            self._icon = tk.PhotoImage(data=ICON_B64)   # Referenz festhalten
+            self.root.iconphoto(True, self._icon)
+        except Exception:
+            pass
 
         # Alles in echten Bildschirmpixeln rechnen (DPI-Faktor unter Windows).
         dpi = self.root.winfo_fpixels("1i")

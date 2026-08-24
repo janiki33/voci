@@ -58,6 +58,12 @@ jobs:
           python -m nuitka --mode=standalone "${gemeinsam[@]}" \
             --output-dir=nuitka-ordner --output-filename=Voci.exe voci_main.py
 
+      # Tcl bringt Zeitzonen, Sprachkataloge und 80 Zeichensatztabellen mit,
+      # von denen Voci keine einzige braucht - das sind ueber 700 der Dateien.
+      - name: Mitgelieferte Tcl/Tk-Daten ausduennen
+        shell: bash
+        run: python build/prune_tcltk.py nuitka-ordner/voci_main.dist
+
       - name: Dateien sammeln
         shell: pwsh
         run: |
@@ -104,6 +110,13 @@ jobs:
               || plutil -replace "$schluessel" -string "$wert" "$PLIST"
           done
           plutil -lint "$PLIST"
+          # Vorsichtig ausduennen: hier laesst sich nicht testen, ob Tk unter
+          # macOS die Bilddateien oder weitere Zeichensaetze doch anfasst.
+          python build/prune_tcltk.py --vorsichtig dist/Voci.app
+          # Nach den Aenderungen neu ad-hoc signieren, sonst ist die Signatur
+          # des Bundles kaputt und macOS verweigert den Start ganz.
+          codesign --force --deep --sign - dist/Voci.app
+          codesign --verify --deep dist/Voci.app && echo "Signatur in Ordnung"
           mkdir -p out
           ditto -c -k --keepParent dist/Voci.app out/Voci-macOS.zip
 
