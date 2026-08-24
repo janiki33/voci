@@ -6,7 +6,7 @@ Bedienung:
   Klick auf die Karte        -> flippt FR <-> DE (beide Richtungen)
   Kreis oben links (FR/DE)   -> Startsprache umschalten
   Kreis oben rechts (x)      -> beenden
-  Kreis unten links (<-)     -> Schritt zurueck (max. 10)
+  Kreis unten links (<-)     -> ein Wort zurueck (max. 10)
   Kreis unten rechts (->)    -> naechstes Wort
   Karte ziehen               -> Fenster verschieben
   Rand ziehen                -> Fenster vergroessern/verkleinern
@@ -151,7 +151,8 @@ class Voci:
         self.cnv.pack(fill="both", expand=True)
 
         self.font_word = tkfont.Font(family="Segoe UI", size=15)
-        self.font_tiny = tkfont.Font(family="Segoe UI", size=8)
+        self.tiny_size = 8
+        self.font_tiny = tkfont.Font(family="Segoe UI", size=self.tiny_size)
 
         # Zustand
         self.deck = list(range(len(VOCAB)))
@@ -243,7 +244,8 @@ class Voci:
         return VOCAB[self.deck[self.pos]]
 
     def remember(self):
-        """Zustand vor einer Aktion merken (fuer den Zurueck-Knopf)."""
+        """Wort-Zustand merken - nur Wortwechsel landen in der Historie,
+        Flips und der Sprachumschalter nicht."""
         self.history.append((self.pos, self.side, self.flips))
         if len(self.history) > HISTORY_MAX:
             self.history.pop(0)
@@ -261,7 +263,8 @@ class Voci:
         self.animate(commit)
 
     def go_back(self):
-        """Macht die letzte Aktion rueckgaengig: erst den Flip, dann das Wort."""
+        """Ein Wort zurueck - genau so, wie es verlassen wurde (gleiche Seite,
+        auch wenn die Startsprache inzwischen umgestellt wurde)."""
         if not self.history or self.animating:
             return
         self.cancel_auto(redraw=False)
@@ -275,7 +278,6 @@ class Voci:
         if self.animating:
             return
         self.cancel_auto(redraw=False)
-        self.remember()
 
         def commit():
             self.side = "de" if self.side == "fr" else "fr"
@@ -287,7 +289,6 @@ class Voci:
             return
         self.start_side = "de" if self.start_side == "fr" else "fr"
         if self.flips == 0 and self.side != self.start_side:
-            self.remember()
 
             def commit():
                 self.side = self.start_side
@@ -352,18 +353,19 @@ class Voci:
         rounded_rect(c, cx - half, 3, cx + half, h - 3, self.corner,
                      fill=hexc(BG), outline=BORDER, width=1)
 
-        if self.scale <= 0.35:
+        if self.scale <= 0.12:
             return
 
         def sx(x):                       # x-Position mitflippen lassen
             return cx + (x - cx) * self.scale
 
-        if self.scale > 0.55:
-            text = self.word[self.side]
-            self.font_word.configure(size=self.word_size(text))
-            c.create_text(cx, h / 2.0, text=text, font=self.font_word,
-                          fill=hexc(FG), width=max(60, (2 * half) - 70 * self.k),
-                          justify="center")
+        # Der Text staucht mit der Karte mit und bricht dabei neu um.
+        text = self.word[self.side]
+        self.font_word.configure(
+            size=max(1, int(round(self.word_size(text) * self.scale))))
+        c.create_text(cx, h / 2.0, text=text, font=self.font_word, fill=hexc(FG),
+                      width=max(20, (2 * half) - 70 * self.k * self.scale),
+                      justify="center")
 
         rest = self.scale > 0.999
         for tag, bx, by, r in self.buttons():
@@ -382,6 +384,8 @@ class Voci:
                                   x + x2 * self.scale, by + y2,
                                   fill=hexc(FG), width=lw, capstyle="round")
             if tag == "lang":
+                self.font_tiny.configure(
+                    size=max(1, int(round(self.tiny_size * self.scale))))
                 c.create_text(x, by, text=self.start_side.upper(),
                               font=self.font_tiny, fill=hexc(FG))
 
