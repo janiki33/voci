@@ -4,11 +4,14 @@ Kleines Flashcard-Fenster (wie der Taschenrechner im „Immer im Vordergrund"-Mo
 das die Französisch-Vokabeln aus *Reprise étape 1* abfragt (243 Wortpaare).
 Läuft unter Windows, macOS und Linux.
 
+### ➜ [**Hier herunterladen**](https://github.com/janiki33/voci/releases/tag/latest)
+
 ![Screenshot](docs/screenshot.png)
 
 ## Herunterladen
 
-Unter **[Releases → latest](../../releases/latest)** liegen die fertigen Dateien:
+Auf der [Download-Seite](https://github.com/janiki33/voci/releases/tag/latest)
+liegen die fertigen Dateien:
 
 | Datei | Für wen |
 |---|---|
