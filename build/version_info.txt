@@ -15,10 +15,11 @@ VSVersionInfo(
     StringFileInfo([
       StringTable(
         '040704b0',
-        [StringStruct('CompanyName', 'Voci'),
+        [StringStruct('CompanyName', 'Janosch Salzgeber'),
          StringStruct('FileDescription', 'Voci - Vokabeltrainer Franzoesisch/Deutsch'),
          StringStruct('FileVersion', '1.0.0.0'),
          StringStruct('InternalName', 'Voci'),
+         StringStruct('LegalCopyright', '(c) 2026 Janosch Salzgeber'),
          StringStruct('OriginalFilename', 'Voci.exe'),
          StringStruct('ProductName', 'Voci'),
          StringStruct('ProductVersion', '1.0.0.0')])

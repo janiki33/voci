@@ -80,6 +80,15 @@ jobs:
           pyinstaller --windowed --noupx --name Voci \
             --icon assets/voci.icns --osx-bundle-identifier ch.janiki33.voci \
             --workpath pyi-build voci_main.py
+          PLIST=dist/Voci.app/Contents/Info.plist
+          for eintrag in \
+            "NSHumanReadableCopyright:(c) 2026 Janosch Salzgeber" \
+            "CFBundleGetInfoString:Voci - Vokabeltrainer, Janosch Salzgeber"; do
+            schluessel="${eintrag%%:*}"; wert="${eintrag#*:}"
+            plutil -insert "$schluessel" -string "$wert" "$PLIST" 2>/dev/null \
+              || plutil -replace "$schluessel" -string "$wert" "$PLIST"
+          done
+          plutil -lint "$PLIST"
           mkdir -p out
           ditto -c -k --keepParent dist/Voci.app out/Voci-macOS.zip
 

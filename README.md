@@ -27,7 +27,13 @@ Alles wird bei jeder Änderung automatisch von GitHub Actions neu gebaut
 
 Beim Start der EXE kommt **„Der Computer wurde durch Windows geschützt"**. Das ist
 keine Virenmeldung — Windows warnt bei jedem Programm ohne gekauftes
-Signaturzertifikat. Zwei Wege daran vorbei:
+Signaturzertifikat. Unter *Weitere Informationen* steht deshalb **„Unbekannter
+Herausgeber"**: Diese Zeile speist sich ausschliesslich aus der digitalen
+Signatur, nicht aus den Dateiangaben. Ohne Zertifikat lässt sie sich nicht
+ändern. Wer der Urheber ist, steht aber in den Dateieigenschaften — Rechtsklick
+auf `Voci.exe` → *Eigenschaften* → *Details*: **Janosch Salzgeber**.
+
+Zwei Wege an der Warnung vorbei:
 
 - Im Warnfenster auf **Weitere Informationen** → **Trotzdem ausführen**.
 - Oder vorher: Rechtsklick auf die heruntergeladene `Voci.exe` → **Eigenschaften**
