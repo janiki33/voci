@@ -1,0 +1,62 @@
+name: Voci bauen
+
+# Baut bei jedem Push auf main (und auf Knopfdruck) die Windows-EXE und
+# haengt sie zusammen mit Voci.pyw an das Release "latest".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Vokabeln in Voci.pyw einbetten
+        shell: bash
+        run: python build/make_app.py
+
+      - name: PyInstaller installieren
+        shell: bash
+        run: pip install --upgrade pyinstaller
+
+      - name: EXE bauen
+        shell: bash
+        run: |
+          cp Voci.pyw voci_main.py
+          pyinstaller --onefile --windowed --name Voci voci_main.py
+
+      - name: Dateien sammeln
+        shell: bash
+        run: |
+          mkdir -p out
+          cp dist/Voci.exe out/Voci.exe
+          cp Voci.pyw out/Voci.pyw
+
+      - name: Als Workflow-Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: Voci
+          path: out/
+
+      - name: Release "latest" aktualisieren
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest out/Voci.exe out/Voci.pyw \
+            --title "Voci - neuste Version" \
+            --notes "Automatisch gebaut aus Commit ${{ github.sha }}.
+
+          - **Voci.exe** - einfach herunterladen und starten, kein Python noetig.
+          - **Voci.pyw** - die Python-Variante (braucht ein installiertes Python)."
