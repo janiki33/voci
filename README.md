@@ -61,23 +61,27 @@ seit 2024 umgeht auch EV die SmartScreen-Warnung nicht mehr sofort.
 
 ### Virenscanner-Fehlalarme
 
-Etwas anderes als die Warnungen oben: Manche Scanner melden bei mit PyInstaller
-gebauten Programmen eine Bedrohung, obwohl keine da ist. Dagegen ist die EXE
-bereits so gebaut, wie es empfohlen wird:
+Etwas anderes als die Warnungen oben: Manche Scanner melden bei selbstgebauten
+Programmen eine Bedrohung, obwohl keine da ist — bei Defender typischerweise als
+`Trojan:Win32/Sabsik.FLA!ml`. Das `!ml` steht für „machine learning", also eine
+Verdachtseinstufung ohne konkrete Signatur.
 
-- eigenes Icon und vollständige Versionsinformationen,
-- keine UPX-Komprimierung,
-- **PyInstaller-Bootloader aus dem Quellcode gebaut.** Der mitgelieferte
-  Bootloader ist in jeder PyInstaller-EXE der Welt identisch und steckt deshalb
-  in den Signaturdatenbanken vieler Scanner. Selbst kompiliert ist er einmalig.
+Die Windows-Fassung wird deshalb mit **Nuitka** gebaut, nicht mit PyInstaller.
+PyInstaller hängt die Anwendung an einen vorkompilierten Bootloader, der in jeder
+damit gebauten EXE weltweit identisch ist — auch in Schadsoftware, die damit
+gebaut wurde. Genau darauf schlagen die Heuristiken an. Nuitka übersetzt den
+Python-Code stattdessen nach C und kompiliert ein gewöhnliches Programm, dem
+dieser gemeinsame Nenner fehlt. Dazu kommen eigenes Icon, vollständige
+Versionsinformationen und keine UPX-Komprimierung.
 
 Falls ein Scanner trotzdem anschlägt:
 
-1. Nimm die **Ordner-Variante** (`Voci-Windows-Ordner.zip`) — die packt sich beim
-   Start nicht selbst aus und fällt Heuristiken deutlich seltener auf.
+1. Nimm die **Ordner-Variante** (`Voci-Windows-Ordner.zip`) — die entpackt sich
+   beim Start nicht selbst und fällt Heuristiken am seltensten auf.
 2. Oder melde den Fehlalarm dem Hersteller. Für Microsoft Defender geht das hier:
    [Datei zur Analyse einreichen](https://www.microsoft.com/en-us/wdsi/filesubmission).
-   Solche Meldungen werden meist innert weniger Tage korrigiert.
+   Solche Meldungen werden meist innert weniger Tage korrigiert und gelten dann
+   für alle.
 3. Ganz ohne EXE: die `Voci.pyw` mit installiertem Python starten.
 
 ## Bedienung

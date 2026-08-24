@@ -26,38 +26,46 @@ jobs:
           python build/make_icons.py
           python build/make_app.py
 
-      # Den Bootloader aus dem Quellcode bauen statt das fertige Binaerstueck zu
-      # nehmen: Der mitgelieferte Bootloader ist in jeder PyInstaller-EXE der
-      # Welt identisch und steckt deshalb in den Signaturdatenbanken der
-      # Virenscanner. Selbst kompiliert ist er einmalig und faellt nicht auf.
-      - name: PyInstaller mit eigenem Bootloader bauen
+      # Nuitka statt PyInstaller: PyInstaller haengt die Anwendung an einen
+      # vorkompilierten Bootloader, der in jeder damit gebauten EXE weltweit
+      # identisch ist - auch in Schadsoftware. Genau darauf schlagen die
+      # ML-Heuristiken der Virenscanner an (Trojan:Win32/Sabsik.FLA!ml).
+      # Nuitka uebersetzt den Python-Code stattdessen nach C und kompiliert
+      # ein gewoehnliches Programm ohne diesen gemeinsamen Nenner.
+      - name: Nuitka installieren
         shell: bash
-        run: |
-          pip install --upgrade setuptools wheel
-          pip install --upgrade --no-binary pyinstaller pyinstaller
-          python -c "import PyInstaller; print('PyInstaller', PyInstaller.__version__)"
+        run: pip install --upgrade nuitka
 
-      # Icon, Versionsinfos und kein UPX: senkt Heuristik-Fehlalarme der
-      # Virenscanner. Zusaetzlich die entpackte Ordnerfassung, die von
-      # Scannern deutlich seltener angefasst wird als die Einzeldatei.
       - name: EXE bauen
         shell: bash
         run: |
           cp Voci.pyw voci_main.py
-          pyinstaller --onefile --windowed --noupx --name Voci \
-            --icon assets/voci.ico --version-file build/version_info.txt \
-            --distpath dist-einzeldatei --workpath pyi-build voci_main.py
-          pyinstaller --onedir --windowed --noupx --name Voci \
-            --icon assets/voci.ico --version-file build/version_info.txt \
-            --distpath dist-ordner --workpath pyi-build voci_main.py
+          gemeinsam=(
+            --enable-plugin=tk-inter
+            --assume-yes-for-downloads
+            --jobs=4
+            --windows-console-mode=disable
+            --windows-icon-from-ico=assets/voci.ico
+            "--company-name=Janosch Salzgeber"
+            "--product-name=Voci"
+            "--file-version=1.0.0.0"
+            "--product-version=1.0.0.0"
+            "--file-description=Voci - Vokabeltrainer Franzoesisch/Deutsch"
+            "--copyright=(c) 2026 Janosch Salzgeber"
+          )
+          python -m nuitka --mode=onefile "${gemeinsam[@]}" \
+            --output-dir=nuitka-einzeldatei --output-filename=Voci.exe voci_main.py
+          python -m nuitka --mode=standalone "${gemeinsam[@]}" \
+            --output-dir=nuitka-ordner --output-filename=Voci.exe voci_main.py
 
       - name: Dateien sammeln
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          Copy-Item dist-einzeldatei/Voci.exe out/Voci.exe
+          Copy-Item nuitka-einzeldatei/Voci.exe out/Voci.exe
           Copy-Item Voci.pyw out/Voci.pyw
-          Compress-Archive -Path dist-ordner/Voci -DestinationPath out/Voci-Windows-Ordner.zip
+          Rename-Item nuitka-ordner/voci_main.dist Voci
+          Compress-Archive -Path nuitka-ordner/Voci -DestinationPath out/Voci-Windows-Ordner.zip
 
       - uses: actions/upload-artifact@v4
         with:
