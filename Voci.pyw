@@ -71,20 +71,32 @@ if IS_WIN:
 # Zwei Paletten, umschaltbar mit der Taste d
 THEMEN = {
     "hell": {
-        "bg": (255, 255, 255),    # Karte
-        "fg": (17, 17, 17),       # Text / Icons
-        "hover": (235, 235, 235), # Knopf beim Hovern
-        "rand": "#d8d8d8",        # Kartenrand
-        "timer": "#ededed",       # Countdown-Balken (dezent)
+        "bg": (255, 255, 255),      # Karte
+        "fg": (29, 29, 31),         # Text/Icons (Apple-Tinte)
+        "zweit": (134, 134, 139),   # Sekundärtext
+        "hover": (242, 242, 247),   # Knopf beim Hovern
+        "gruppe": (242, 242, 247),  # Gruppenflächen im Menü
+        "rand": "#e3e3e8",          # Haarlinie
+        "timer": "#e8e8ed",         # Countdown-Balken (dezent)
+        "akzent": (10, 132, 255),   # Systemblau
+        "gruen": (52, 199, 89),     # Schalter an
+        "grau": (209, 209, 214),    # Schalter aus
     },
     "dunkel": {
         "bg": (0, 0, 0),
-        "fg": (255, 255, 255),
-        "hover": (38, 38, 38),
-        "rand": "#333333",
-        "timer": "#2b2b2b",
+        "fg": (245, 245, 247),
+        "zweit": (152, 152, 157),
+        "hover": (28, 28, 30),
+        "gruppe": (22, 22, 24),
+        "rand": "#2c2c2e",
+        "timer": "#2c2c2e",
+        "akzent": (10, 132, 255),
+        "gruen": (48, 209, 88),
+        "grau": (57, 57, 61),
     },
 }
+MAC_ROT = (255, 95, 87)             # Schliessknopf beim Hovern
+MAC_ROT_SYMBOL = (96, 8, 4)
 KEY = "#00fe00"               # Farbschlüssel für runde Ecken (Windows)
 FALLBACK_VOID = "#bdbdbd"     # falls die Plattform keine Transparenz kann
 
@@ -242,7 +254,7 @@ STANDARD_EINSTELLUNGEN = {
 # gewichtet: b senkt ihn um 0.2, c erhöht ihn um 0.1, v lässt ihn stehen.
 # Bei Faktor 0 kommt das Wort nicht mehr dran.
 WERTUNG_DELTA = {"c": +0.1, "v": 0.0, "b": -0.2}
-WERTUNG_BLITZ = {"c": (221, 84, 74), "v": (235, 196, 92), "b": (96, 186, 112)}
+WERTUNG_BLITZ = {"c": (255, 105, 97), "v": (255, 214, 10), "b": (50, 215, 75)}
 FAKTOR_MIN, FAKTOR_MAX = 0.0, 3.0
 BLITZ_MS = 260                    # so lange leuchtet die Karte nach c/v/b
 
@@ -298,7 +310,7 @@ def wertung_prozent(faktor):
 
 def wertung_farbe(prozent):
     """Rot (0 %) über Gelb (50 %) nach Grün (100 %)."""
-    rot, gelb, gruen = (221, 84, 74), (235, 196, 92), (96, 186, 112)
+    rot, gelb, gruen = (255, 105, 97), (235, 204, 42), (50, 215, 75)
     if prozent <= 50:
         return blend(rot, gelb, prozent / 50.0)
     return blend(gelb, gruen, (prozent - 50) / 50.0)
@@ -902,11 +914,15 @@ class Voci:
         img = self.imgcache.get(key)
         if img is None:
             size = self.br * 2 + 4
-            img = render_button(size, self.br,
-                                self.farbe("hover") if hot else self.farbe("bg"),
+            if tag == "close" and hot:
+                flaeche, symbol = MAC_ROT, MAC_ROT_SYMBOL
+            else:
+                flaeche = self.farbe("hover") if hot else self.farbe("bg")
+                symbol = self.farbe("fg")
+            img = render_button(size, self.br, flaeche,
                                 icon_segs(tag, self.br),
                                 max(1.5, 1.7 * self.k),
-                                self.farbe("fg"), self.farbe("bg"))
+                                symbol, self.farbe("bg"))
             self.imgcache[key] = img
         return img
 
@@ -955,20 +971,22 @@ class Voci:
                 self.font_tiny.configure(
                     size=-max(1, int(round(self.tiny_px * self.scale))))
                 c.create_text(x, by, text=self.start_side.upper(),
-                              font=self.font_tiny, fill=hexc(self.farbe("fg")))
+                              font=self.font_tiny,
+                              fill=hexc(self.farbe("zweit")))
 
         hinweis = self.update_hinweis()
         if hinweis and rest and not self.countdown_frac:
             self.font_tiny.configure(size=-self.tiny_px)
             c.create_text(cx, h - 14 * self.k, text=hinweis,
-                          font=self.font_tiny, fill=self.farbe("rand"))
+                          font=self.font_tiny, fill=hexc(self.farbe("zweit")))
 
         if self.countdown_frac and rest:
             bw = (w - 2 * (self.pad + self.br + 12 * self.k)) * self.countdown_frac
-            if bw > 0:
-                y = h - 11 * self.k
-                c.create_rectangle(cx - bw / 2, y, cx + bw / 2, y + 3 * self.k,
-                                   fill=self.farbe("timer"), width=0)
+            hoehe = max(3.0, 4 * self.k)
+            if bw > hoehe:
+                y = h - 12 * self.k
+                rounded_rect(c, cx - bw / 2, y, cx + bw / 2, y + hoehe,
+                             hoehe / 2, fill=self.farbe("timer"), width=0)
 
     def wrapped(self, text):
         """Zeilenumbruch einmal bei voller Kartenbreite bestimmen und merken.
@@ -1063,202 +1081,341 @@ class Voci:
             self.liste_fenster.destroy()
             self.liste_zeigen()
 
-    def _stil(self, widget, **extra):
-        werte = dict(bg=hexc(self.farbe("bg")), fg=hexc(self.farbe("fg")),
-                     highlightthickness=0, bd=0)
-        werte.update(extra)
-        try:
-            widget.configure(**werte)
-        except tk.TclError:
-            pass
+    def _menu_fonts(self):
+        familie = self.font_word.actual("family")
+        self.font_menu = tkfont.Font(family=familie, size=-int(13 * self.k))
+        self.font_menu_fett = tkfont.Font(family=familie, size=-int(13 * self.k),
+                                          weight="bold")
+        self.font_menu_titel = tkfont.Font(family=familie, size=-int(15 * self.k),
+                                           weight="bold")
+        self.font_menu_klein = tkfont.Font(family=familie, size=-int(11 * self.k))
 
-    def _knopfstil(self, knopf, **extra):
-        self._stil(knopf, activebackground=hexc(self.farbe("hover")),
-                   activeforeground=hexc(self.farbe("fg")), relief="flat",
-                   cursor=CURSOR_HAND, **extra)
-
-    def _wahlstil(self, w):
-        """Check- und Radioknöpfe im Kartenlook."""
-        self._stil(w, activebackground=hexc(self.farbe("bg")),
-                   activeforeground=hexc(self.farbe("fg")),
-                   selectcolor=hexc(self.farbe("hover")),
-                   anchor="w", relief="flat", cursor=CURSOR_HAND)
-
-    def _fenster_deckel(self, fenster, titel, schliessen):
-        """Kopfzeile: Titel links, X rechts, Fläche zieht das Fenster."""
-        deckel = tk.Frame(fenster, bg=hexc(self.farbe("bg")))
-        deckel.pack(fill="x", padx=10, pady=(8, 0))
-        lab = tk.Label(deckel, text=titel, font=self.font_menu_titel)
-        self._stil(lab)
-        lab.pack(side="left")
-        x = tk.Button(deckel, text="×", font=self.font_menu, width=2,
-                      command=schliessen)
-        self._knopfstil(x)
-        x.pack(side="right")
-        zustand = {}
-        def start(e):
-            zustand["p"] = (e.x_root, e.y_root, fenster.winfo_x(), fenster.winfo_y())
-        def zieh(e):
-            sx, sy, wx, wy = zustand.get("p", (e.x_root, e.y_root,
-                                               fenster.winfo_x(), fenster.winfo_y()))
-            fenster.geometry("+%d+%d" % (wx + e.x_root - sx, wy + e.y_root - sy))
-        for ziel in (deckel, lab):
-            ziel.bind("<ButtonPress-1>", start)
-            ziel.bind("<B1-Motion>", zieh)
-        return deckel
-
-    def _neben_karte(self, fenster, breite, hoehe):
+    def _rundes_fenster(self, breite, hoehe):
+        """Randloses Zusatzfenster im Kartenstil, mit runden Ecken wo möglich."""
+        f = tk.Toplevel(self.root)
+        f.overrideredirect(True)
+        f.attributes("-topmost", True)
+        leer = FALLBACK_VOID
+        if self.keyed:
+            try:
+                f.attributes("-transparentcolor", KEY)
+                leer = KEY
+            except tk.TclError:
+                pass
+        elif IS_MAC:
+            try:
+                f.attributes("-transparent", True)
+                f.configure(bg="systemTransparent")
+                leer = "systemTransparent"
+            except tk.TclError:
+                pass
+        cnv = tk.Canvas(f, bd=0, highlightthickness=0, bg=leer,
+                        width=breite, height=hoehe)
+        cnv.pack(fill="both", expand=True)
         x = self.root.winfo_x() + self.w + 12
         y = self.root.winfo_y()
-        if x + breite > fenster.winfo_screenwidth():
+        if x + breite > f.winfo_screenwidth():
             x = max(0, self.root.winfo_x() - breite - 12)
-        fenster.geometry("%dx%d+%d+%d" % (breite, hoehe, x, y))
+        f.geometry("%dx%d+%d+%d" % (breite, hoehe, x, y))
+        return f, cnv
+
+    def _panel_grund(self, cnv, breite, hoehe, titel, schliessen):
+        """Kartenfläche, Titelzeile und X; liefert die Starthöhe des Inhalts."""
+        rounded_rect(cnv, 1, 1, breite - 1, hoehe - 1, self.corner,
+                     fill=hexc(self.farbe("bg")),
+                     outline=self.farbe("rand"), width=1)
+        cnv.create_text(int(18 * self.k), int(22 * self.k), text=titel,
+                        anchor="w", font=self.font_menu_titel,
+                        fill=hexc(self.farbe("fg")))
+        r = int(10 * self.k)
+        bx = breite - int(22 * self.k)
+        by = int(22 * self.k)
+        cnv.create_oval(bx - r, by - r, bx + r, by + r, width=0,
+                        fill=hexc(self.farbe("bg")), tags="xknopf")
+        a = r * 0.42
+        for (x1, y1, x2, y2) in (((-a), (-a), a, a), ((-a), a, a, (-a))):
+            cnv.create_line(bx + x1, by + y1, bx + x2, by + y2,
+                            fill=hexc(self.farbe("zweit")),
+                            width=max(1.4, 1.5 * self.k), capstyle="round",
+                            tags="xknopf")
+        self._region(cnv, bx - r - 4, by - r - 4, bx + r + 4, by + r + 4,
+                     schliessen, "close")
+        return int(44 * self.k)
+
+    def _region(self, cnv, x1, y1, x2, y2, cb, name=""):
+        cnv._regionen.append((x1, y1, x2, y2, cb, name))
+
+    def _region_klick(self, cnv, event):
+        x = cnv.canvasx(event.x)
+        y = cnv.canvasy(event.y)
+        for x1, y1, x2, y2, cb, _ in reversed(cnv._regionen):
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                cb()
+                return True
+        return False
+
+    def _region_ausloesen(self, cnv, name):
+        """Für Tests: benannte Region direkt auslösen."""
+        for x1, y1, x2, y2, cb, n in cnv._regionen:
+            if n == name:
+                cb()
+                return True
+        return False
+
+    def _schalter(self, cnv, x, y, an):
+        """Apple-Kippschalter: grüne Pille mit weissem Knauf."""
+        b, h = int(36 * self.k), int(21 * self.k)
+        farbe = self.farbe("gruen") if an else self.farbe("grau")
+        rounded_rect(cnv, x - b, y - h / 2, x, y + h / 2, h / 2,
+                     fill=hexc(farbe), width=0)
+        r = h / 2 - 2
+        kx = x - r - 2 if an else x - b + r + 2
+        cnv.create_oval(kx - r, y - r, kx + r, y + r,
+                        fill="#ffffff", outline="#00000022" if False else "",
+                        width=0)
+
+    def _segmente(self, cnv, x_rechts, y, optionen, aktiv, cb_name, cb):
+        """Segmentregler: Pillenhintergrund, aktives Segment als weisse Karte."""
+        h = int(22 * self.k)
+        pad = int(10 * self.k)
+        breiten = [self.font_menu_klein.measure(text) + 2 * pad
+                   for _, text in optionen]
+        gesamt = sum(breiten)
+        x0 = x_rechts - gesamt
+        rounded_rect(cnv, x0, y - h / 2, x_rechts, y + h / 2, h / 2,
+                     fill=hexc(self.farbe("gruppe")), width=0)
+        lauf = x0
+        for (wert, text), bw in zip(optionen, breiten):
+            if wert == aktiv:
+                rounded_rect(cnv, lauf + 2, y - h / 2 + 2,
+                             lauf + bw - 2, y + h / 2 - 2, h / 2 - 2,
+                             fill=hexc(self.farbe("bg")),
+                             outline=self.farbe("rand"), width=1)
+            cnv.create_text(lauf + bw / 2, y, text=text,
+                            font=(self.font_menu_fett if wert == aktiv
+                                  else self.font_menu_klein),
+                            fill=hexc(self.farbe("fg")))
+            self._region(cnv, lauf, y - h / 2, lauf + bw, y + h / 2,
+                         lambda w=wert: cb(w), "%s-%s" % (cb_name, wert))
+            lauf += bw
+
+    def _gruppe(self, cnv, x1, y, breite, zeilen, zeichner):
+        """Abgerundete Gruppenfläche mit Haarlinien zwischen den Zeilen."""
+        zh = int(34 * self.k)
+        hoehe = zh * len(zeilen)
+        rounded_rect(cnv, x1, y, x1 + breite, y + hoehe, int(10 * self.k),
+                     fill=hexc(self.farbe("gruppe")), width=0)
+        for n, zeile in enumerate(zeilen):
+            zy = y + zh * n + zh / 2
+            if n:
+                cnv.create_line(x1 + int(14 * self.k), y + zh * n,
+                                x1 + breite - int(2 * self.k), y + zh * n,
+                                fill=self.farbe("rand"))
+            zeichner(zeile, x1, zy, breite)
+        return y + hoehe
 
     def _menu_bauen(self, tab):
         self._menu_tab = tab
-        self.font_menu = tkfont.Font(font=self.font_tiny)
-        self.font_menu.configure(size=-int(13 * self.k))
-        self.font_menu_titel = tkfont.Font(font=self.font_menu)
-        self.font_menu_titel.configure(weight="bold")
-
-        m = tk.Toplevel(self.root)
-        m.overrideredirect(True)
-        m.attributes("-topmost", True)
-        m.configure(bg=hexc(self.farbe("bg")),
-                    highlightthickness=1,
-                    highlightbackground=self.farbe("rand"))
+        self._menu_fonts()
+        breite = int(320 * self.k)
+        hoehe = int(392 * self.k)
+        m, cnv = self._rundes_fenster(breite, hoehe)
         self.menu = m
-        self._neben_karte(m, int(300 * self.k), int(330 * self.k))
-        m.bind("<Key>", lambda e: (self.menu_umschalten()
-                                   if e.keysym.lower() in ("m", "escape") else None))
+        self.menu_cnv = cnv
+        cnv._regionen = []
 
         def zu():
             m.destroy()
             self.menu = None
-        self._fenster_deckel(m, "Voci", zu)
+        cnv.bind("<Button-1>", lambda e: self._menu_klick(e))
+        m.bind("<Key>", lambda e: (zu() if e.keysym.lower() in ("m", "escape")
+                                   else None))
+        self._menu_zeichnen()
 
-        # Tab-Leiste
-        leiste = tk.Frame(m, bg=hexc(self.farbe("bg")))
-        leiste.pack(fill="x", padx=10, pady=(6, 2))
-        for schluessel, name in (("einstellungen", "Einstellungen"),
-                                 ("sets", "Voci-Sets")):
-            aktiv = schluessel == tab
-            b = tk.Button(leiste, text=name, font=self.font_menu,
-                          command=lambda k=schluessel: self._menu_bauen_neu(k))
-            self._knopfstil(b)
-            if aktiv:
-                b.configure(font=self.font_menu_titel)
-            b.pack(side="left", padx=(0, 10))
-            strich = tk.Frame(leiste, height=2, width=1,
-                              bg=hexc(self.farbe("fg")) if aktiv
-                              else hexc(self.farbe("bg")))
-        inhalt = tk.Frame(m, bg=hexc(self.farbe("bg")))
-        inhalt.pack(fill="both", expand=True, padx=14, pady=8)
-        if tab == "einstellungen":
-            self._tab_einstellungen(inhalt)
-        else:
-            self._tab_sets(inhalt)
+    def _panel_klick(self, fenster, cnv, event):
+        if self._region_klick(cnv, event):
+            return
+        # freie Fläche zieht das Fenster
+        start = (event.x_root, event.y_root, fenster.winfo_x(), fenster.winfo_y())
+        def zieh(e):
+            fenster.geometry("+%d+%d" % (start[2] + e.x_root - start[0],
+                                         start[3] + e.y_root - start[1]))
+        cnv.bind("<B1-Motion>", zieh)
+        cnv.bind("<ButtonRelease-1>",
+                 lambda e: (cnv.unbind("<B1-Motion>"),
+                            cnv.unbind("<ButtonRelease-1>")))
 
-    def _menu_bauen_neu(self, tab):
-        if self.menu and self.menu.winfo_exists():
+    def _menu_klick(self, event):
+        self._panel_klick(self.menu, self.menu_cnv, event)
+
+    def _menu_zeichnen(self):
+        cnv = self.menu_cnv
+        cnv.delete("all")
+        cnv._regionen = []
+        breite = int(320 * self.k)
+        hoehe = int(392 * self.k)
+        rand = int(16 * self.k)
+        innen = breite - 2 * rand
+
+        def zu():
             self.menu.destroy()
-        self._menu_bauen(tab)
+            self.menu = None
+        y = self._panel_grund(cnv, breite, hoehe, "Voci", zu)
 
-    def _tab_einstellungen(self, wurzel):
-        e = self.einst
+        # Tab-Umschalter als Segmentregler über die volle Breite
+        h = int(26 * self.k)
+        mitte_y = y + h / 2
+        rounded_rect(cnv, rand, y, rand + innen, y + h, h / 2,
+                     fill=hexc(self.farbe("gruppe")), width=0)
+        haelfte = innen / 2
+        for n, (wert, text) in enumerate((("einstellungen", "Einstellungen"),
+                                          ("sets", "Voci-Sets"))):
+            x0 = rand + haelfte * n
+            if wert == self._menu_tab:
+                rounded_rect(cnv, x0 + 2, y + 2, x0 + haelfte - 2, y + h - 2,
+                             h / 2 - 2, fill=hexc(self.farbe("bg")),
+                             outline=self.farbe("rand"), width=1)
+            cnv.create_text(x0 + haelfte / 2, mitte_y, text=text,
+                            font=(self.font_menu_fett if wert == self._menu_tab
+                                  else self.font_menu),
+                            fill=hexc(self.farbe("fg")))
+            self._region(cnv, x0, y, x0 + haelfte, y + h,
+                         lambda w=wert: self._tab_wechseln(w), "tab-" + wert)
+        y += h + int(14 * self.k)
 
-        def schalter(text, schluessel, wirkung=None):
-            var = tk.BooleanVar(master=wurzel, value=e[schluessel])
-            def um():
-                e[schluessel] = var.get()
-                speichere_einstellungen(e)
-                if wirkung:
-                    wirkung(var.get())
-            cb = tk.Checkbutton(wurzel, text=text, variable=var, command=um,
-                                font=self.font_menu)
-            self._wahlstil(cb)
-            cb.pack(fill="x", pady=1)
-            return var
+        if self._menu_tab == "einstellungen":
+            self._tab_einstellungen(cnv, rand, y, innen)
+        else:
+            self._tab_sets(cnv, rand, y, innen)
 
-        dunkel = tk.BooleanVar(master=wurzel, value=self.thema == "dunkel")
-        def dunkel_um():
-            self.toggle_thema()
-        cb = tk.Checkbutton(wurzel, text="Dark Mode (Taste d)", variable=dunkel,
-                            command=dunkel_um, font=self.font_menu)
-        self._wahlstil(cb)
-        cb.pack(fill="x", pady=1)
+    def _tab_wechseln(self, tab):
+        self._menu_tab = tab
+        self._menu_zeichnen()
 
-        schalter("Immer im Vordergrund", "immer_vorne",
-                 lambda an: self.root.attributes("-topmost", bool(an)))
-        schalter("Mit Pfeiltasten navigieren", "pfeiltasten")
-        schalter("Flip-Animation", "flip_animation")
-        schalter("Auto-Weiter beim Raustabben", "auto_weiter")
+    def _einstellung_kippen(self, schluessel, wirkung=None):
+        self.einst[schluessel] = not self.einst[schluessel]
+        speichere_einstellungen(self.einst)
+        if wirkung:
+            wirkung(self.einst[schluessel])
+        self._menu_zeichnen()
 
-        zeile = tk.Frame(wurzel, bg=hexc(self.farbe("bg")))
-        zeile.pack(fill="x", pady=(4, 1))
-        lab = tk.Label(zeile, text="Auto-Weiter nach", font=self.font_menu)
-        self._stil(lab)
-        lab.pack(side="left")
-        dauer = tk.IntVar(master=wurzel, value=int(e["auto_dauer"]))
-        def dauer_um():
-            e["auto_dauer"] = dauer.get()
-            speichere_einstellungen(e)
-        for sek in (3, 5, 10):
-            rb = tk.Radiobutton(zeile, text="%d s" % sek, value=sek,
-                                variable=dauer, command=dauer_um,
-                                font=self.font_menu)
-            self._wahlstil(rb)
-            rb.pack(side="left", padx=(6, 0))
+    def _tab_einstellungen(self, cnv, x, y, innen):
+        tx = x + int(14 * self.k)
 
-        zeile2 = tk.Frame(wurzel, bg=hexc(self.farbe("bg")))
-        zeile2.pack(fill="x", pady=1)
-        lab2 = tk.Label(zeile2, text="Startsprache", font=self.font_menu)
-        self._stil(lab2)
-        lab2.pack(side="left")
-        sprache = tk.StringVar(master=wurzel, value=self.start_side)
-        def sprache_um():
-            if sprache.get() != self.start_side:
-                self.toggle_start()
-        for wert, name in (("fr", "FR"), ("de", "DE")):
-            rb = tk.Radiobutton(zeile2, text=name, value=wert, variable=sprache,
-                                command=sprache_um, font=self.font_menu)
-            self._wahlstil(rb)
-            rb.pack(side="left", padx=(6, 0))
+        def schalterzeile(text, wert, cb, name):
+            def zeichne(_, gx, gy, gb):
+                cnv.create_text(tx, gy, text=text, anchor="w",
+                                font=self.font_menu, fill=hexc(self.farbe("fg")))
+                self._schalter(cnv, gx + gb - int(12 * self.k), gy, wert)
+                self._region(cnv, gx, gy - 17 * self.k, gx + gb, gy + 17 * self.k,
+                             cb, name)
+            return zeichne
 
-        info = tk.Label(wurzel, text="Bewerten: c = kann ich nicht,\n"
-                                     "v = neutral, b = kann ich schon",
-                        font=self.font_menu, justify="left")
-        self._stil(info, fg=self.farbe("rand"))
-        info.pack(fill="x", pady=(10, 0))
+        zeilen1 = [
+            schalterzeile("Dark Mode", self.thema == "dunkel",
+                          self.toggle_thema, "dark"),
+            schalterzeile("Immer im Vordergrund", self.einst["immer_vorne"],
+                          lambda: self._einstellung_kippen(
+                              "immer_vorne",
+                              lambda an: self.root.attributes("-topmost", bool(an))),
+                          "vorne"),
+            schalterzeile("Pfeiltasten-Navigation", self.einst["pfeiltasten"],
+                          lambda: self._einstellung_kippen("pfeiltasten"),
+                          "pfeile"),
+            schalterzeile("Flip-Animation", self.einst["flip_animation"],
+                          lambda: self._einstellung_kippen("flip_animation"),
+                          "flip"),
+        ]
+        y = self._gruppe(cnv, x, y, innen, zeilen1,
+                         lambda z, gx, gy, gb: z(z, gx, gy, gb)) + int(12 * self.k)
 
-    def _tab_sets(self, wurzel):
-        e = self.einst
-        for satz in self.sets:
-            zeile = tk.Frame(wurzel, bg=hexc(self.farbe("bg")))
-            zeile.pack(fill="x", pady=2)
-            var = tk.BooleanVar(master=wurzel, value=satz["id"] in e["sets"])
-            def um(sid=satz["id"], v=None, var=var):
-                gewaehlt = set(e["sets"])
-                if var.get():
-                    gewaehlt.add(sid)
-                else:
+        def auto_zeile(_, gx, gy, gb):
+            cnv.create_text(tx, gy, text="Auto-Weiter", anchor="w",
+                            font=self.font_menu, fill=hexc(self.farbe("fg")))
+            self._schalter(cnv, gx + gb - int(12 * self.k), gy,
+                           self.einst["auto_weiter"])
+            self._region(cnv, gx, gy - 17 * self.k, gx + gb, gy + 17 * self.k,
+                         lambda: self._einstellung_kippen("auto_weiter"), "auto")
+
+        def dauer_zeile(_, gx, gy, gb):
+            cnv.create_text(tx, gy, text="Wartezeit", anchor="w",
+                            font=self.font_menu, fill=hexc(self.farbe("fg")))
+            def setze(w):
+                self.einst["auto_dauer"] = w
+                speichere_einstellungen(self.einst)
+                self._menu_zeichnen()
+            self._segmente(cnv, gx + gb - int(12 * self.k), gy,
+                           [(3, "3 s"), (5, "5 s"), (10, "10 s")],
+                           int(self.einst["auto_dauer"]), "dauer", setze)
+
+        def sprache_zeile(_, gx, gy, gb):
+            cnv.create_text(tx, gy, text="Startsprache", anchor="w",
+                            font=self.font_menu, fill=hexc(self.farbe("fg")))
+            def setze(w):
+                if w != self.start_side:
+                    self.toggle_start()
+                self._menu_zeichnen()
+            self._segmente(cnv, gx + gb - int(12 * self.k), gy,
+                           [("fr", "FR"), ("de", "DE")],
+                           self.start_side, "sprache", setze)
+
+        y = self._gruppe(cnv, x, y, innen, [auto_zeile, dauer_zeile, sprache_zeile],
+                         lambda z, gx, gy, gb: z(z, gx, gy, gb)) + int(14 * self.k)
+
+        cnv.create_text(x + innen / 2, y + int(6 * self.k),
+                        text="Bewerten:  c kann ich nicht  ·  v neutral  ·  b kann ich",
+                        font=self.font_menu_klein,
+                        fill=hexc(self.farbe("zweit")))
+
+    def _tab_sets(self, cnv, x, y, innen):
+        tx = x + int(14 * self.k)
+
+        def set_zeile(satz, gx, gy, gb):
+            aktiv = satz["id"] in self.einst["sets"]
+            # Haken-Kreis in Systemblau
+            r = int(9 * self.k)
+            hx = tx + r
+            if aktiv:
+                cnv.create_oval(hx - r, gy - r, hx + r, gy + r, width=0,
+                                fill=hexc(self.farbe("akzent")))
+                w = max(1.5, 1.7 * self.k)
+                cnv.create_line(hx - r * 0.45, gy + r * 0.05,
+                                hx - r * 0.1, gy + r * 0.42,
+                                hx + r * 0.5, gy - r * 0.38,
+                                fill="#ffffff", width=w, capstyle="round",
+                                joinstyle="round")
+            else:
+                cnv.create_oval(hx - r, gy - r, hx + r, gy + r,
+                                outline=hexc(self.farbe("grau")), width=2)
+            cnv.create_text(hx + r + int(10 * self.k), gy, anchor="w",
+                            text=satz["name"], font=self.font_menu,
+                            fill=hexc(self.farbe("fg")))
+            cnv.create_text(hx + r + int(10 * self.k) + self.font_menu.measure(
+                                satz["name"]) + int(8 * self.k), gy, anchor="w",
+                            text="%d Wörter" % len(satz["indizes"]),
+                            font=self.font_menu_klein,
+                            fill=hexc(self.farbe("zweit")))
+            def kippen(sid=satz["id"]):
+                gewaehlt = set(self.einst["sets"])
+                if sid in gewaehlt:
                     gewaehlt.discard(sid)
-                if not gewaehlt:            # mindestens ein Set bleibt aktiv
+                if not gewaehlt or satz["id"] not in self.einst["sets"]:
                     gewaehlt.add(sid)
-                    var.set(True)
-                e["sets"] = sorted(gewaehlt)
-                speichere_einstellungen(e)
-            cb = tk.Checkbutton(zeile, text="%s  (%d Wörter)"
-                                % (satz["name"], len(satz["indizes"])),
-                                variable=var, command=um, font=self.font_menu)
-            self._wahlstil(cb)
-            cb.pack(side="left", fill="x", expand=True)
-            punkte = tk.Button(zeile, text="⋯", font=self.font_menu, width=2,
-                               command=lambda k=zeile: self._set_optionen(k))
-            self._knopfstil(punkte)
-            punkte.pack(side="right")
+                self.einst["sets"] = sorted(gewaehlt)
+                speichere_einstellungen(self.einst)
+                self._menu_zeichnen()
+            self._region(cnv, gx, gy - 17 * self.k, gx + gb - int(40 * self.k),
+                         gy + 17 * self.k, kippen, "set-" + satz["id"])
+            px = gx + gb - int(22 * self.k)
+            cnv.create_text(px, gy, text="⋯", font=self.font_menu_fett,
+                            fill=hexc(self.farbe("zweit")))
+            self._region(cnv, px - 14, gy - 14, px + 14, gy + 14,
+                         lambda: self._set_optionen(px, gy), "punkte")
 
-    def _set_optionen(self, anker):
+        self._gruppe(cnv, x, y, innen, self.sets,
+                     lambda z, gx, gy, gb: set_zeile(z, gx, gy, gb))
+
+    def _set_optionen(self, px, py):
         popup = tk.Menu(self.menu, tearoff=0,
                         bg=hexc(self.farbe("bg")), fg=hexc(self.farbe("fg")),
                         activebackground=hexc(self.farbe("hover")),
@@ -1272,66 +1429,64 @@ class Voci:
         popup.add_checkbutton(label="Schwere Wörter üben (Faktor ≥ 1)",
                               variable=schwer, command=schwer_um)
         popup.add_command(label="Wörterliste anzeigen", command=self.liste_zeigen)
-        popup.tk_popup(anker.winfo_rootx() + anker.winfo_width(),
-                       anker.winfo_rooty())
+        popup.tk_popup(self.menu.winfo_rootx() + int(px),
+                       self.menu.winfo_rooty() + int(py))
 
     # ------------------------------------------------------------ Wörterliste
     def liste_zeigen(self):
         if self.liste_fenster and self.liste_fenster.winfo_exists():
             self.liste_fenster.lift()
             return
-        self.font_menu = getattr(self, "font_menu", None) or tkfont.Font(
-            font=self.font_tiny)
-        self.font_menu.configure(size=-int(13 * self.k))
-        self.font_menu_titel = tkfont.Font(font=self.font_menu)
-        self.font_menu_titel.configure(weight="bold")
-
-        f = tk.Toplevel(self.root)
-        f.overrideredirect(True)
-        f.attributes("-topmost", True)
-        f.configure(bg=hexc(self.farbe("bg")), highlightthickness=1,
-                    highlightbackground=self.farbe("rand"))
-        self.liste_fenster = f
+        self._menu_fonts()
         self.liste_sortierung = getattr(self, "liste_sortierung", "az")
-        self._neben_karte(f, int(360 * self.k), int(420 * self.k))
+        breite = int(360 * self.k)
+        hoehe = int(430 * self.k)
+        f, cnv = self._rundes_fenster(breite, hoehe)
+        self.liste_fenster = f
+        cnv._regionen = []
+        self.liste_aussen = cnv
 
         def zu():
             f.destroy()
             self.liste_fenster = None
-        self._fenster_deckel(f, "Wörterliste", zu)
-        f.bind("<Key>", lambda e2: zu() if e2.keysym == "Escape" else None)
+        y = self._panel_grund(cnv, breite, hoehe, "Wörterliste", zu)
+        cnv.bind("<Button-1>", lambda e: self._panel_klick(f, cnv, e))
+        f.bind("<Key>", lambda e: zu() if e.keysym == "Escape" else None)
 
-        kopf = tk.Frame(f, bg=hexc(self.farbe("bg")))
-        kopf.pack(fill="x", padx=10, pady=(6, 2))
-        lab = tk.Label(kopf, text="Sortieren:", font=self.font_menu)
-        self._stil(lab)
-        lab.pack(side="left")
-        for wert, name in (("az", "A–Z"), ("wertung", "Wertung")):
-            b = tk.Button(kopf, text=name, font=(self.font_menu_titel
-                          if self.liste_sortierung == wert else self.font_menu),
-                          command=lambda w=wert: self._liste_sortieren(w))
-            self._knopfstil(b)
-            b.pack(side="left", padx=(6, 0))
-        alle = tk.Button(kopf, text="Alle zurücksetzen", font=self.font_menu,
-                         command=self._liste_alles_zuruecksetzen)
-        self._knopfstil(alle)
-        alle.pack(side="right")
+        rand = int(16 * self.k)
+        innen = breite - 2 * rand
 
-        rumpf = tk.Frame(f, bg=hexc(self.farbe("bg")))
-        rumpf.pack(fill="both", expand=True, padx=(10, 0), pady=(2, 10))
-        cnv = tk.Canvas(rumpf, bg=hexc(self.farbe("bg")), bd=0,
-                        highlightthickness=0)
-        balken = tk.Scrollbar(rumpf, orient="vertical", command=cnv.yview,
-                              width=int(10 * self.k))
-        cnv.configure(yscrollcommand=balken.set)
-        balken.pack(side="right", fill="y")
-        cnv.pack(side="left", fill="both", expand=True)
-        self.liste_canvas = cnv
-        cnv.bind("<Button-1>", self._liste_klick)
-        cnv.bind("<MouseWheel>", lambda e2: cnv.yview_scroll(
-            -1 if e2.delta > 0 else 1, "units"))
-        cnv.bind("<Button-4>", lambda e2: cnv.yview_scroll(-1, "units"))
-        cnv.bind("<Button-5>", lambda e2: cnv.yview_scroll(1, "units"))
+        def sortiere(w):
+            self.liste_sortierung = w
+            zu()
+            self.liste_zeigen()
+        self._segmente(cnv, rand + int(150 * self.k), y + int(11 * self.k),
+                       [("az", "A–Z"), ("wertung", "Wertung")],
+                       self.liste_sortierung, "sortier", sortiere)
+        # Zurücksetzen als roter Textknopf (Apple-Stil für Löschendes)
+        rx = breite - rand
+        cnv.create_text(rx, y + int(11 * self.k), text="Alle zurücksetzen",
+                        anchor="e", font=self.font_menu_klein,
+                        fill=hexc((255, 105, 97)))
+        tb = self.font_menu_klein.measure("Alle zurücksetzen")
+        self._region(cnv, rx - tb, y, rx, y + int(22 * self.k),
+                     self._liste_alles_zuruecksetzen, "reset-alle")
+        y += int(30 * self.k)
+
+        # Innenliste: eigener Canvas im Panel, rollt mit dem Mausrad
+        rumpf_hoehe = hoehe - y - int(14 * self.k)
+        rows = tk.Canvas(f, bd=0, highlightthickness=0,
+                         bg=hexc(self.farbe("bg")),
+                         width=innen, height=rumpf_hoehe)
+        cnv.create_window(rand, y, anchor="nw", window=rows)
+        self.liste_canvas = rows
+        rows.bind("<Button-1>", self._liste_klick)
+        for ziel in (rows, cnv):
+            ziel.bind("<MouseWheel>", lambda e: rows.yview_scroll(
+                -1 if e.delta > 0 else 1, "units"))
+            ziel.bind("<Button-4>", lambda e: rows.yview_scroll(-1, "units"))
+            ziel.bind("<Button-5>", lambda e: rows.yview_scroll(1, "units"))
+        self.liste_breite = innen
         self._liste_fuellen()
 
     def _liste_sortieren(self, wie):
@@ -1354,41 +1509,41 @@ class Voci:
     def _liste_fuellen(self):
         cnv = self.liste_canvas
         cnv.delete("all")
-        zeilenhoehe = int(24 * self.k)
-        breite = int(360 * self.k) - int(10 * self.k) * 2 - int(10 * self.k)
+        zh = int(30 * self.k)
+        breite = self.liste_breite
         self.liste_zeilen = self._liste_reihenfolge()
         for reihe, i in enumerate(self.liste_zeilen):
-            y = reihe * zeilenhoehe
+            y = reihe * zh
+            mitte = y + zh / 2
             prozent = wertung_prozent(self.faktor(i))
-            farbe = wertung_farbe(prozent)
-            r = int(5 * self.k)
-            mx = breite - int(64 * self.k)
+            r = int(4.5 * self.k)
+            mx = breite - int(78 * self.k)
+            if reihe:
+                cnv.create_line(0, y, breite, y, fill=self.farbe("rand"))
             text = "%s – %s" % (self.vocab[i]["fr"], self.vocab[i]["de"])
-            frei = mx - r - int(10 * self.k) - 4
+            frei = mx - r - int(12 * self.k)
             if self.font_menu.measure(text) > frei:
                 while text and self.font_menu.measure(text + "…") > frei:
                     text = text[:-1]
                 text += "…"
-            cnv.create_text(4, y + zeilenhoehe / 2, text=text, anchor="w",
+            cnv.create_text(int(2 * self.k), mitte, text=text, anchor="w",
                             font=self.font_menu, fill=hexc(self.farbe("fg")))
-            cnv.create_oval(mx - r, y + zeilenhoehe / 2 - r,
-                            mx + r, y + zeilenhoehe / 2 + r,
-                            fill=hexc(farbe), width=0)
-            cnv.create_text(mx + int(12 * self.k), y + zeilenhoehe / 2,
-                            text="%d%%" % prozent, anchor="w",
-                            font=self.font_menu, fill=hexc(self.farbe("fg")))
-            cnv.create_text(breite - int(8 * self.k), y + zeilenhoehe / 2,
-                            text="↺", anchor="e", font=self.font_menu,
-                            fill=self.farbe("rand"),
+            cnv.create_oval(mx - r, mitte - r, mx + r, mitte + r,
+                            fill=hexc(wertung_farbe(prozent)), width=0)
+            cnv.create_text(mx + int(12 * self.k), mitte, text="%d%%" % prozent,
+                            anchor="w", font=self.font_menu_klein,
+                            fill=hexc(self.farbe("zweit")))
+            cnv.create_text(breite - int(6 * self.k), mitte, text="↺",
+                            anchor="e", font=self.font_menu,
+                            fill=hexc(self.farbe("zweit")),
                             tags=("reset", "reset-%d" % i))
-        cnv.configure(scrollregion=(0, 0, breite,
-                                    len(self.liste_zeilen) * zeilenhoehe))
+        cnv.configure(scrollregion=(0, 0, breite, len(self.liste_zeilen) * zh))
 
     def _liste_klick(self, event):
         cnv = self.liste_canvas
         x = cnv.canvasx(event.x)
         y = cnv.canvasy(event.y)
-        for element in cnv.find_overlapping(x - 6, y - 6, x + 6, y + 6):
+        for element in cnv.find_overlapping(x - 8, y - 8, x + 8, y + 8):
             for tag in cnv.gettags(element):
                 if tag.startswith("reset-"):
                     self.setze_faktor(int(tag.split("-")[1]), 1.0)
