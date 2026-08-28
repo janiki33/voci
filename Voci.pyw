@@ -193,6 +193,7 @@ def lade_vokabeln():
 STANDARD_EINSTELLUNGEN = {
     "thema": "hell",
     "startsprache": "fr",
+    "pfeil_knoepfe": True,        # ← → Knöpfe auf der Karte zeigen
     "pfeiltasten": True,          # mit Pfeil links/rechts navigieren
     "auto_weiter": True,          # beim Raustabben automatisch weiter
     "auto_dauer": 5,              # Sekunden bis zum Auto-Weiter
@@ -808,7 +809,7 @@ class Gruppe(QFrame):
 # ---------------------------------------------------------------- Menü
 class MenuFenster(Panel):
     def __init__(self, app, tab="einstellungen"):
-        super().__init__(app, "Voci", 320, 396)
+        super().__init__(app, "Voci", 320, 430)
         self.tab = tab
         self.regionen = {}           # Name -> Wirkung (auch für Tests)
         self._bauen()
@@ -857,13 +858,17 @@ class MenuFenster(Panel):
 
         def schalter(name, text, wert, cb):
             s = Schalter(a, wert, lambda _an: cb())
-            g = g1 if name in ("dark", "vorne", "pfeile", "flip") else g2
+            g = g1 if name in ("dark", "vorne", "knoepfe", "pfeile",
+                               "flip") else g2
             g.zeile(text, s)
             self.regionen[name] = cb
 
         schalter("dark", "Dark Mode", a.thema == "dunkel", a.toggle_thema)
         schalter("vorne", "Immer im Vordergrund", a.einst["immer_vorne"],
                  lambda: a.einstellung_kippen("vorne", "immer_vorne"))
+        schalter("knoepfe", "Pfeil-Knöpfe auf der Karte",
+                 a.einst["pfeil_knoepfe"],
+                 lambda: a.einstellung_kippen("knoepfe", "pfeil_knoepfe"))
         schalter("pfeile", "Pfeiltasten-Navigation", a.einst["pfeiltasten"],
                  lambda: a.einstellung_kippen("pfeile", "pfeiltasten"))
         schalter("flip", "Flip-Animation", a.einst["flip_animation"],
@@ -1142,12 +1147,18 @@ class Karte(QWidget):
                       self.height() - 2 * SCHATTEN)
 
     def buttons(self):
+        """Sichtbare Knöpfe. Die Pfeile lassen sich im Menü ausblenden; da
+        Zeichnen und Trefferzonen dieselbe Liste nutzen, verschwinden mit
+        ihnen auch ihre Klickflächen."""
         r = self.karte_rect()
         pad, kr = 30, 15
-        return (("lang", r.x() + pad, r.y() + pad, kr),
+        alle = (("lang", r.x() + pad, r.y() + pad, kr),
                 ("close", r.right() - pad, r.y() + pad, kr),
                 ("back", r.x() + pad, r.bottom() - pad, kr),
                 ("next", r.right() - pad, r.bottom() - pad, kr))
+        if not self.app.einst["pfeil_knoepfe"]:
+            return tuple(b for b in alle if b[0] not in ("back", "next"))
+        return alle
 
     # ---- weiche Übergänge
     def _hover_schritt(self):
@@ -1723,6 +1734,7 @@ class Voci:
         speichere_einstellungen(self.einst)
         if schluessel == "immer_vorne":
             self._topmost(self.einst[schluessel])
+        self.karte.update()
 
     def schwere_kippen(self):
         self.einst["schwere_modus"] = not self.einst["schwere_modus"]

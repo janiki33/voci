@@ -107,6 +107,11 @@ Falls ein Scanner trotzdem anschlägt:
 | Taste **c** / **v** / **b** | Wort bewerten: kann ich nicht / neutral / kann ich schon |
 | Pfeil **←** / **→** | zurück / weiter (im Menü abschaltbar) |
 
+Im Menü lassen sich die beiden Dinge getrennt steuern: **Pfeil-Knöpfe auf der
+Karte** blendet die Knöpfe ← → aus (X und FR/DE bleiben), **Pfeiltasten-
+Navigation** schaltet die Tastatur ab. Wer die Karte ganz aufgeräumt will,
+blendet die Knöpfe aus und navigiert per Tastatur.
+
 Der **Zurück-Knopf springt ein Wort zurück** – Flips und der Sprachumschalter
 zählen nicht als Schritt. Das vorherige Wort erscheint in der Sprache, die
 gerade angezeigt wird: Ist man gerade auf DE, kommt es auf DE, egal wie man es
@@ -167,8 +172,9 @@ Die **Wertung** in der Wörterliste rechnet den Faktor um: 1 (und alles darüber
 
 ## Menü (Taste m)
 
-- **Einstellungen:** Dark Mode, immer im Vordergrund, Pfeiltasten-Navigation,
-  Flip-Animation, Auto-Weiter an/aus und dessen Dauer (3/5/10 s), Startsprache.
+- **Einstellungen:** Dark Mode, immer im Vordergrund, Pfeil-Knöpfe auf der
+  Karte, Pfeiltasten-Navigation, Flip-Animation, Auto-Weiter an/aus und dessen
+  Dauer (3/5/10 s), Startsprache.
   Alles wird gespeichert und beim nächsten Start wiederhergestellt.
 - **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich; aktuell gibt es
   *Étape 1*). Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit
