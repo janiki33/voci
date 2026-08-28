@@ -11,6 +11,7 @@ Bedienung:
   Kreis unten rechts (->)    -> nächstes Wort
   Karte ziehen               -> Fenster verschieben
   Rand ziehen                -> Fenster vergrössern/verkleinern
+  Taste d                    -> Dark Mode an/aus
 
 Wenn das Fenster den Fokus verliert und das aktuelle Wort schon mehr als
 einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
@@ -53,11 +54,23 @@ if IS_WIN:
         pass
 
 # ---------------------------------------------------------------- Farben
-BG = (255, 255, 255)          # Karte
-FG = (17, 17, 17)             # Text / Icons
-HOVER = (235, 235, 235)       # Knopf beim Hovern
-BORDER = "#d8d8d8"            # Kartenrand
-TIMER = "#ededed"             # Countdown-Balken (dezent)
+# Zwei Paletten, umschaltbar mit der Taste d
+THEMEN = {
+    "hell": {
+        "bg": (255, 255, 255),    # Karte
+        "fg": (17, 17, 17),       # Text / Icons
+        "hover": (235, 235, 235), # Knopf beim Hovern
+        "rand": "#d8d8d8",        # Kartenrand
+        "timer": "#ededed",       # Countdown-Balken (dezent)
+    },
+    "dunkel": {
+        "bg": (0, 0, 0),
+        "fg": (255, 255, 255),
+        "hover": (38, 38, 38),
+        "rand": "#333333",
+        "timer": "#2b2b2b",
+    },
+}
 KEY = "#00fe00"               # Farbschlüssel für runde Ecken (Windows)
 FALLBACK_VOID = "#bdbdbd"     # falls die Plattform keine Transparenz kann
 
@@ -187,6 +200,7 @@ class Voci:
         self.deck = list(range(len(VOCAB)))
         random.shuffle(self.deck)
         self.pos = 0
+        self.thema = "hell"
         self.start_side = "fr"
         self.side = self.start_side
         self.flips = 0
@@ -208,6 +222,7 @@ class Voci:
         self.cnv.bind("<ButtonRelease-1>", self.on_release)
         self.cnv.bind("<Motion>", self.on_hover)
         self.root.bind("<Configure>", self.on_configure)
+        self.root.bind("<Key>", self.on_key)
         if IS_WIN:
             self._init_win_focus_poll()
         else:
@@ -390,6 +405,21 @@ class Voci:
                 self.draw()
         shrink()
 
+    # ------------------------------------------------------------ Darstellung
+    def farbe(self, name):
+        return THEMEN[self.thema][name]
+
+    def toggle_thema(self):
+        """Hell/dunkel wechseln - die Knopfbilder sind pro Palette gerendert
+        und muessen deshalb neu erzeugt werden."""
+        self.thema = "dunkel" if self.thema == "hell" else "hell"
+        self.imgcache.clear()
+        self.draw()
+
+    def on_key(self, event):
+        if event.keysym.lower() == "d":
+            self.toggle_thema()
+
     # ------------------------------------------------------------ Layout
     def buttons(self):
         p, r = self.pad, self.br
@@ -399,14 +429,15 @@ class Voci:
                 ("next", self.w - p, self.h - p, r))
 
     def button_image(self, tag, hot):
-        key = (tag, hot, self.br)
+        key = (tag, hot, self.br, self.thema)
         img = self.imgcache.get(key)
         if img is None:
             size = self.br * 2 + 4
             img = render_button(size, self.br,
-                                HOVER if hot else BG,
+                                self.farbe("hover") if hot else self.farbe("bg"),
                                 icon_segs(tag, self.br),
-                                max(1.5, 1.7 * self.k), FG, BG)
+                                max(1.5, 1.7 * self.k),
+                                self.farbe("fg"), self.farbe("bg"))
             self.imgcache[key] = img
         return img
 
@@ -418,7 +449,8 @@ class Voci:
         half = max(2.0, (w / 2.0 - 3) * max(self.scale, 0.02))
 
         rounded_rect(c, cx - half, 3, cx + half, h - 3, self.corner,
-                     fill=hexc(BG), outline=BORDER, width=1)
+                     fill=hexc(self.farbe("bg")),
+                     outline=self.farbe("rand"), width=1)
 
         if self.scale <= 0.12:
             return
@@ -430,7 +462,7 @@ class Voci:
         lines, full = self.wrapped(self.word[self.side])
         self.font_word.configure(size=-max(1, int(round(full * self.scale))))
         c.create_text(cx, h / 2.0, text=lines, font=self.font_word,
-                      fill=hexc(FG), justify="center")
+                      fill=hexc(self.farbe("fg")), justify="center")
 
         rest = self.scale > 0.999
         for tag, bx, by, r in self.buttons():
@@ -442,24 +474,25 @@ class Voci:
             else:
                 if self.hover == tag:
                     c.create_oval(x - r * self.scale, by - r, x + r * self.scale, by + r,
-                                  fill=hexc(HOVER), width=0)
+                                  fill=hexc(self.farbe("hover")), width=0)
                 lw = max(1.5, 1.7 * self.k)
                 for (x1, y1, x2, y2) in icon_segs(tag, r):
                     c.create_line(x + x1 * self.scale, by + y1,
                                   x + x2 * self.scale, by + y2,
-                                  fill=hexc(FG), width=lw, capstyle="round")
+                                  fill=hexc(self.farbe("fg")), width=lw,
+                                  capstyle="round")
             if tag == "lang":
                 self.font_tiny.configure(
                     size=-max(1, int(round(self.tiny_px * self.scale))))
                 c.create_text(x, by, text=self.start_side.upper(),
-                              font=self.font_tiny, fill=hexc(FG))
+                              font=self.font_tiny, fill=hexc(self.farbe("fg")))
 
         if self.countdown_frac and rest:
             bw = (w - 2 * (self.pad + self.br + 12 * self.k)) * self.countdown_frac
             if bw > 0:
                 y = h - 11 * self.k
                 c.create_rectangle(cx - bw / 2, y, cx + bw / 2, y + 3 * self.k,
-                                   fill=TIMER, width=0)
+                                   fill=self.farbe("timer"), width=0)
 
     def wrapped(self, text):
         """Zeilenumbruch einmal bei voller Kartenbreite bestimmen und merken.
@@ -568,6 +601,10 @@ class Voci:
 
     def on_press(self, e):
         self.set_active(True)
+        try:
+            self.root.focus_force()      # sonst kommen keine Tastendruecke an
+        except tk.TclError:
+            pass
         edge = self.hit_edge(e.x, e.y)
         if edge:
             self._resize = (edge, e.x_root, e.y_root, self.root.winfo_x(),

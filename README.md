@@ -101,6 +101,7 @@ Falls ein Scanner trotzdem anschlägt:
 | Kreis unten rechts (→) | nächstes Wort |
 | Karte ziehen | Fenster verschieben |
 | Rand/Ecke ziehen | Fenster grösser/kleiner ziehen |
+| Taste **d** | Dark Mode an/aus |
 
 Der **Zurück-Knopf springt ein Wort zurück** – Flips und der Sprachumschalter
 zählen nicht als Schritt. Das vorherige Wort erscheint in der Sprache, die
@@ -114,6 +115,10 @@ umspringt.
 Das Fenster ist **immer im Vordergrund**, hat keinen Titel, kein Minimieren und
 kein Maximieren, weisse Karte mit schwarzem Text in Graustufen, abgerundete Ecken
 und randlose Knöpfe, die nur beim Draufzeigen grau werden.
+
+**Dark Mode:** Taste **d** schaltet auf komplett schwarze Karte mit weissem Text
+um und wieder zurück – ohne Schaltfläche. Damit die Taste ankommt, muss das
+Fenster den Fokus haben; ein Klick darauf genügt.
 
 **Auto-Weiter:** Tabbt man aus dem Fenster raus, nachdem das aktuelle Wort schon
 mehr als einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
