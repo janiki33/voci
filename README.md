@@ -201,6 +201,23 @@ Der Hauptgrund für das Setup ist der Updater: Wenn Voci an einem festen Ort
 liegt, weiss er genau, wo er die Dateien austauschen muss. Bei einer irgendwo
 entpackten ZIP hängt das davon ab, wohin sie entpackt wurde.
 
+## PDF-Import
+
+Über *Menü → Voci-Sets → ＋ PDF importieren …* liest Voci eine Vokabel-PDF ein
+und legt sie als eigenes Set an. Erwartet wird das Layout der Reprise-Blätter:
+zwei Spalten (links Französisch, rechts Deutsch) mit nummerierten Einträgen
+(`1.`, `2.`, …); Folgezeilen werden dem vorherigen Eintrag zugeschlagen,
+Kopf- und Fusszeilen ignoriert. Unvollständige Einträge werden übersprungen
+statt den Import scheitern zu lassen.
+
+Importierte Sets liegen im Benutzerordner (`Voci/sets/`), überleben Programm-
+Updates, lassen sich im Sets-Tab an- und abwählen und über **⋯ → Set
+entfernen** wieder löschen. Bewertungen funktionieren auf importierten Wörtern
+genauso wie auf den mitgelieferten.
+
+Für die `Voci.pyw`-Variante braucht der Import zusätzlich
+`pip install pdfplumber`; die EXE- und macOS-Fassungen bringen es mit.
+
 ## Updates
 
 Das Programm hält sich selbst aktuell, in zwei getrennten Teilen.

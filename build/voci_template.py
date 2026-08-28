@@ -43,9 +43,9 @@ try:
     from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication,
                                QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
                                QTransform)
-    from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-                                   QMenu, QPushButton, QScrollArea, QVBoxLayout,
-                                   QWidget)
+    from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame,
+                                   QHBoxLayout, QLabel, QMenu, QPushButton,
+                                   QScrollArea, QVBoxLayout, QWidget)
 except ImportError:                                  # Python-Fassung ohne PySide6
     sys.stderr.write(
         "Voci braucht PySide6. Einmalig installieren mit:\n"
@@ -463,6 +463,130 @@ def startbefehl_fuer(art, ziel):
     return '"%s"' % ziel
 
 
+
+
+# ---------------------------------------------------------------- Eigene Sets
+def sets_ordner():
+    ordner = datenordner() / "sets"
+    ordner.mkdir(parents=True, exist_ok=True)
+    return ordner
+
+
+def lade_eigene_sets():
+    """Importierte Voci-Sets aus dem Benutzerordner."""
+    ergebnis = []
+    for datei in sorted(sets_ordner().glob("*.json")):
+        try:
+            daten = json.loads(datei.read_text(encoding="utf-8"))
+            if (isinstance(daten, dict) and vokabeln_gueltig_locker(daten.get("vocab"))
+                    and daten.get("name")):
+                ergebnis.append({"id": datei.stem, "name": str(daten["name"]),
+                                 "vocab": daten["vocab"]})
+        except Exception:
+            continue
+    return ergebnis
+
+
+def vokabeln_gueltig_locker(daten):
+    """Wie vokabeln_gueltig, aber schon ab einem Eintrag - ein kleines
+    selbst importiertes Set ist auch ein Set."""
+    return (isinstance(daten, list) and len(daten) >= 1
+            and all(isinstance(e, dict) and e.get("fr") and e.get("de")
+                    for e in daten))
+
+
+def speichere_eigenes_set(name, vocab):
+    kennung = "set-%d" % int(__import__("time").time())
+    (sets_ordner() / ("%s.json" % kennung)).write_text(
+        json.dumps({"name": name, "vocab": vocab}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
+    return kennung
+
+
+def loesche_eigenes_set(kennung):
+    try:
+        (sets_ordner() / ("%s.json" % kennung)).unlink()
+    except FileNotFoundError:
+        pass
+
+
+# ---------------------------------------------------------------- PDF-Import
+ENTRY_NUMMER = __import__("re").compile(r"^(\d+)\.$")
+
+
+def pdf_verfuegbar():
+    try:
+        import pdfplumber  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _zeilen_gruppieren(woerter, toleranz=3):
+    """Wörter mit etwa gleicher Höhe zu Zeilen zusammenfassen."""
+    zeilen = []
+    for wort in sorted(woerter, key=lambda w: (w["top"], w["x0"])):
+        for zeile in zeilen:
+            if abs(zeile[0]["top"] - wort["top"]) <= toleranz:
+                zeile.append(wort)
+                break
+        else:
+            zeilen.append([wort])
+    return [sorted(z, key=lambda w: w["x0"]) for z in zeilen]
+
+
+def _zeile_ignorieren(text):
+    re = __import__("re")
+    return (not text
+            or text.startswith("Reprise étape")
+            or text.startswith("Lerne online")
+            or re.fullmatch(r"\d+\s*/\s*\d+", text) is not None)
+
+
+def pdf_importieren(pfad):
+    """Liest eine zweispaltige Vokabel-PDF (links Französisch, rechts Deutsch,
+    Einträge mit '1.'-Nummern) und liefert (name, [{fr, de}, ...]).
+
+    Unvollständige Einträge werden übersprungen statt den ganzen Import
+    scheitern zu lassen - eine PDF mit ein paar unlesbaren Zeilen ist besser
+    als gar keine."""
+    import pdfplumber
+
+    eintraege = []
+    aktuell = None
+    with pdfplumber.open(pfad) as pdf:
+        for seite in pdf.pages:
+            grenze = seite.width / 2      # Spaltengrenze relativ zur Seite
+            woerter = seite.extract_words(use_text_flow=False,
+                                          keep_blank_chars=False)
+            for zeile in _zeilen_gruppieren(woerter):
+                text = " ".join(w["text"] for w in zeile).strip()
+                if _zeile_ignorieren(text):
+                    continue
+                treffer = ENTRY_NUMMER.match(zeile[0]["text"])
+                if treffer:
+                    aktuell = {"fr": "", "de": ""}
+                    eintraege.append(aktuell)
+                    inhalt = zeile[1:]
+                else:
+                    inhalt = zeile        # Folgezeile des vorherigen Eintrags
+                if aktuell is None:
+                    continue
+                links = " ".join(w["text"] for w in inhalt if w["x0"] < grenze)
+                rechts = " ".join(w["text"] for w in inhalt if w["x0"] >= grenze)
+                if links:
+                    aktuell["fr"] = ("%s %s" % (aktuell["fr"], links)).strip()
+                if rechts:
+                    aktuell["de"] = ("%s %s" % (aktuell["de"], rechts)).strip()
+
+    brauchbar = [e for e in eintraege if e["fr"] and e["de"]]
+    if not brauchbar:
+        raise ValueError("In der PDF wurden keine Vokabeln gefunden. Erwartet "
+                         "werden zwei Spalten (links Französisch, rechts "
+                         "Deutsch) mit nummerierten Einträgen wie '1.'.")
+    name = pathlib.Path(pfad).stem
+    name = __import__("re").sub(r"[-_]+", " ", name).strip() or "Importiertes Set"
+    return name, brauchbar
 
 
 # ---------------------------------------------------------------- Qt-Grundlagen
@@ -973,13 +1097,46 @@ class MenuFenster(Panel):
             punkte.setStyleSheet(
                 "QPushButton { color: %s; background: transparent; border: none; }"
                 % hexc(THEMEN[a.thema]["zweit"]))
-            punkte.clicked.connect(lambda _=False, k=punkte: self._optionen(k))
+            punkte.clicked.connect(
+                lambda _=False, k=punkte, sz=satz: self._optionen(k, sz))
             g.zeile(links, punkte)
             self.regionen["set-%s" % satz["id"]] = kippen
             self.regionen["punkte"] = lambda k=punkte: self._optionen(k)
         wurzel.addWidget(g)
 
-    def _optionen(self, anker):
+        importieren = QPushButton("＋  PDF importieren …")
+        importieren.setFlat(True)
+        importieren.setFont(basisfont(13))
+        importieren.setCursor(Qt.CursorShape.PointingHandCursor)
+        importieren.setStyleSheet(
+            "QPushButton { color: %s; background: %s; border: none;"
+            " border-radius: 10px; padding: 8px; text-align: center; }"
+            "QPushButton:hover { background: %s; }"
+            % (hexc(THEMEN[a.thema]["akzent"]), hexc(THEMEN[a.thema]["gruppe"]),
+               hexc(THEMEN[a.thema]["hover"])))
+        if pdf_verfuegbar():
+            importieren.clicked.connect(self._pdf_waehlen)
+        else:
+            importieren.setText("PDF-Import braucht das Paket pdfplumber")
+            importieren.setEnabled(False)
+        wurzel.addWidget(importieren)
+        self.regionen["import"] = self._pdf_waehlen
+
+        if a.import_status:
+            status = QLabel(a.import_status)
+            status.setFont(basisfont(11))
+            status.setWordWrap(True)
+            status.setStyleSheet("color: %s; background: transparent;"
+                                 % hexc(THEMEN[a.thema]["zweit"]))
+            wurzel.addWidget(status)
+
+    def _pdf_waehlen(self):
+        pfad, _ = QFileDialog.getOpenFileName(
+            self, "Vokabel-PDF auswählen", "", "PDF-Dateien (*.pdf)")
+        if pfad:
+            self.app.set_importieren(pfad)
+
+    def _optionen(self, anker, satz=None):
         a = self.app
         t = THEMEN[a.thema]
         menue = QMenu(self)
@@ -997,6 +1154,12 @@ class MenuFenster(Panel):
         liste = QAction("Wörterliste anzeigen", menue)
         liste.triggered.connect(a.liste_zeigen)
         menue.addAction(liste)
+        if satz is not None and satz.get("eigen"):
+            menue.addSeparator()
+            entfernen = QAction("„%s“ entfernen" % satz["name"], menue)
+            entfernen.triggered.connect(
+                lambda _=False, k=satz["id"]: a.set_loeschen(k))
+            menue.addAction(entfernen)
         menue.exec(anker.mapToGlobal(anker.rect().bottomLeft()))
 
 
@@ -1369,23 +1532,31 @@ class Karte(QWidget):
         self.app.animating = False
         self.update()
 
-    def drehe(self, commit):
+    def uebergang(self, commit, richtung=+1):
+        """Standard-Übergang für alles: Karte dreht sich. Ist die
+        Flip-Animation abgeschaltet, gleitet stattdessen nur das Wort -
+        die dezente Variante."""
+        if self.app.einst["flip_animation"]:
+            self.drehe(commit, richtung)
+        else:
+            self.gleite(commit, richtung)
+
+    def drehe(self, commit, richtung=+1):
         """Echter Flip: Die Karte dreht sich um die Hochachse, auf halbem Weg
-        wechselt der Inhalt. Die zweite Hälfte läuft von -90 zurück, sonst
-        stünde die Schrift spiegelverkehrt."""
+        wechselt der Inhalt - vor und zurück in entgegengesetzter Richtung.
+        Die zweite Hälfte läuft von -90 zurück, sonst stünde die Schrift
+        spiegelverkehrt."""
         a = self.app
         if a.animating:
-            return
-        if not a.einst["flip_animation"]:
-            self._ohne_animation(commit)
             return
         a.animating = True
 
         def schritt(w):
             t = kurve(w)
-            self.winkel = t * 180.0
-            if self.winkel > 90:
-                self.winkel -= 180.0
+            grad = t * 180.0
+            if grad > 90:
+                grad -= 180.0
+            self.winkel = richtung * grad
             # kurz vor der Kante ausblenden, dahinter wieder auf
             self.inhalt = min(1.0, abs(math.cos(math.radians(t * 180))) * 2.2)
             self.update()
@@ -1403,9 +1574,6 @@ class Karte(QWidget):
         der anderen Seite herein - Richtung passend zu vor/zurück."""
         a = self.app
         if a.animating:
-            return
-        if not a.einst["flip_animation"]:
-            self._ohne_animation(commit)
             return
         a.animating = True
 
@@ -1588,10 +1756,10 @@ class Voci:
     def __init__(self, qapp):
         self.qapp = qapp
         self.einst = lade_einstellungen()
-        self.vocab = lade_vokabeln()
         self.faktoren = lade_faktoren()
-        self.sets = [{"id": "etape1", "name": "Étape 1",
-                      "indizes": list(range(len(self.vocab)))}]
+        self.import_status = None       # Text im Sets-Tab (lädt/Fehler)
+        self.import_ergebnis = None     # (name, vocab) aus dem Import-Faden
+        self._sets_aufbauen()
         self.thema = self.einst["thema"]
         self.start_side = self.einst["startsprache"]
         self.side = self.start_side
@@ -1667,6 +1835,71 @@ class Voci:
         if sichtbar:
             k.show()
 
+    # ---- Sets
+    def _sets_aufbauen(self):
+        """Grundliste plus importierte Sets zu einer Wortliste verbinden;
+        jedes Set kennt seine Indizes darin."""
+        self.vocab = list(lade_vokabeln())
+        self.sets = [{"id": "etape1", "name": "Étape 1",
+                      "indizes": list(range(len(self.vocab))), "eigen": False}]
+        for satz in lade_eigene_sets():
+            start = len(self.vocab)
+            self.vocab.extend(satz["vocab"])
+            self.sets.append({"id": satz["id"], "name": satz["name"],
+                              "indizes": list(range(start, len(self.vocab))),
+                              "eigen": True})
+        bekannt = {satz["id"] for satz in self.sets}
+        self.einst["sets"] = sorted(set(self.einst["sets"]) & bekannt) \
+            or ["etape1"]
+
+    def set_importieren(self, pfad):
+        """PDF im Hintergrund einlesen; das Ergebnis holt der UI-Takt ab."""
+        if self.import_status == "lädt":
+            return
+        self.import_status = "lädt"
+        self._menu_sets_auffrischen()
+
+        def arbeit():
+            try:
+                self.import_ergebnis = pdf_importieren(pfad)
+            except Exception as fehler:
+                self.import_ergebnis = ("FEHLER", str(fehler))
+        threading.Thread(target=arbeit, daemon=True).start()
+
+    def _import_abschliessen(self):
+        name, daten = self.import_ergebnis
+        self.import_ergebnis = None
+        if name == "FEHLER":
+            self.import_status = "Import fehlgeschlagen: %s" % daten
+            self._menu_sets_auffrischen()
+            return
+        kennung = speichere_eigenes_set(name, daten)
+        self._sets_aufbauen()
+        self.einst["sets"] = sorted(set(self.einst["sets"]) | {kennung})
+        speichere_einstellungen(self.einst)
+        self.import_status = "„%s“ importiert (%d Wörter)" % (name, len(daten))
+        self.history.clear()
+        self.undo_delta = None
+        self.idx = self.ziehe_wort()
+        self.karte.update()
+        self._menu_sets_auffrischen()
+
+    def set_loeschen(self, kennung):
+        loesche_eigenes_set(kennung)
+        self._sets_aufbauen()
+        speichere_einstellungen(self.einst)
+        self.history.clear()
+        self.undo_delta = None
+        self.idx = self.ziehe_wort()
+        self.karte.update()
+        self._menu_sets_auffrischen()
+
+    def _menu_sets_auffrischen(self):
+        if self.menu and self.menu.isVisible() and self.menu.tab == "sets":
+            self.menu._bauen()
+        if self.liste and self.liste.isVisible():
+            self.liste._fuellen()
+
     # ---- Wortlogik (identisch zur bisherigen Fassung)
     @property
     def word(self):
@@ -1723,7 +1956,7 @@ class Voci:
             self.idx = neu
             self.flips = 0
             self.side = self.start_side
-        self.karte.gleite(commit, +1)
+        self.karte.uebergang(commit, +1)
 
     def go_back(self):
         """Ein Wort zurück, in der gerade sichtbaren Sprache."""
@@ -1736,7 +1969,7 @@ class Voci:
         def commit():
             self.idx = eintrag["idx"]
             self.flips = 0
-        self.karte.gleite(commit, -1)
+        self.karte.uebergang(commit, -1)
 
     def flip(self):
         if self.animating or self.blitz:
@@ -1746,7 +1979,7 @@ class Voci:
         def commit():
             self.side = "de" if self.side == "fr" else "fr"
             self.flips += 1
-        self.karte.drehe(commit)
+        self.karte.uebergang(commit, +1)
 
     def bewerte(self, taste):
         """c/v/b: Faktor anpassen, Karte aufleuchten lassen, weiter. Nach
@@ -1775,7 +2008,7 @@ class Voci:
 
             def commit():
                 self.side = self.start_side
-            self.karte.drehe(commit)
+            self.karte.uebergang(commit, +1)
         else:
             self.karte.update()
 
@@ -1898,6 +2131,8 @@ class Voci:
         if self.update_fertig:
             self._tauschen()
             return
+        if self.import_ergebnis:
+            self._import_abschliessen()
         self.karte.update()
 
     def update_starten(self):

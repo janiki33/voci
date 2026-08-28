@@ -37,7 +37,7 @@ jobs:
         env:
           VOCI_VERSION: ${{ needs.version.outputs.tag }}
         run: |
-          pip install --upgrade pillow PySide6
+          pip install --upgrade pillow PySide6 pdfplumber
           python build/make_icons.py
           python build/make_app.py
 
@@ -113,7 +113,7 @@ jobs:
         env:
           VOCI_VERSION: ${{ needs.version.outputs.tag }}
         run: |
-          pip install --upgrade pillow PySide6
+          pip install --upgrade pillow PySide6 pdfplumber
           python build/make_icons.py
           python build/make_app.py
 
