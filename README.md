@@ -129,8 +129,9 @@ Jede Aktion hat ihre eigene Bewegung:
   anderen Seite herein — Richtung passend zu vor oder zurück. Der Rahmen mit
   den Knöpfen bleibt dabei ruhig stehen, der Text wird am Kartenrand
   beschnitten.
-- **Wertung (c/v/b):** Die Farbe schwillt an und klingt wieder ab, die Karte
-  poppt kurz auf, dann gleitet das nächste Wort herein.
+- **Wertung (c/v/b):** Ein dezenter Pastellton (20 % Rot/Gelb/Grün) schwillt
+  an und klingt wieder ab, die Karte poppt kurz auf, dann kommt das nächste
+  Wort.
 - **Knöpfe:** Der graue Kreis wächst beim Draufzeigen weich ein statt hart
   umzuspringen; der Schliessknopf wandert dabei ins macOS-Rot.
 - **Schalter:** Der Knauf gleitet und wird beim Klick kurz breiter, die Farbe

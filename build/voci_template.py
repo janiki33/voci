@@ -210,6 +210,7 @@ WERTUNG_DELTA = {"c": +0.1, "v": 0.0, "b": -0.2}
 WERTUNG_BLITZ = {"c": (255, 105, 97), "v": (255, 214, 10), "b": (50, 215, 75)}
 FAKTOR_MIN, FAKTOR_MAX = 0.0, 3.0
 BLITZ_MS = 260                    # so lange leuchtet die Karte nach c/v/b
+BLITZ_ANTEIL = 0.2                # Farbanteil des Blitzes - bewusst dezent
 
 
 def _json_datei(name, standard):
@@ -1422,7 +1423,7 @@ class Karte(QWidget):
                 p.setBrush(w)
                 p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2),
                                   RADIUS + i, RADIUS + i)
-        flaeche = (blend(t["bg"], a.blitz, self.blitz_staerke)
+        flaeche = (blend(t["bg"], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
                    if a.blitz else t["bg"])
         p.setBrush(qfarbe(flaeche))
         p.setPen(QPen(qfarbe(t["rand"]), 1))
