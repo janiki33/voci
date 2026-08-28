@@ -13,8 +13,8 @@ Bedienung:
   Rand ziehen                -> Fenster vergrössern/verkleinern
   Taste d                    -> Dark Mode an/aus
 
-Wenn das Fenster den Fokus verliert und das aktuelle Wort schon mehr als
-einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
+Wenn das Fenster den Fokus verliert und das aktuelle Wort schon geflippt
+wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 (ein feiner Balken unten zählt runter) – ausser man tabbt vorher zurück.
 """
 
@@ -76,7 +76,7 @@ FALLBACK_VOID = "#bdbdbd"     # falls die Plattform keine Transparenz kann
 
 # ---------------------------------------------------------------- Verhalten
 AUTO_DELAY_MS = 5000          # 5 s bis zum Auto-Weiter
-FLIPS_NEEDED = 2              # "mehr als 1 mal geflippt"
+FLIPS_NEEDED = 1              # Timer schon nach dem ersten Flip
 HISTORY_MAX = 10              # max. 10 Wörter zurück
 POLL_MS = 250                 # Fokus-Polling (Windows)
 

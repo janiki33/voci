@@ -121,7 +121,7 @@ um und wieder zurück – ohne Schaltfläche. Damit die Taste ankommt, muss das
 Fenster den Fokus haben; ein Klick darauf genügt.
 
 **Auto-Weiter:** Tabbt man aus dem Fenster raus, nachdem das aktuelle Wort schon
-mehr als einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
+einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 (ein feiner Balken unten zählt runter) – ausser man tabbt vorher wieder rein.
 
 ## Vokabeln ändern
