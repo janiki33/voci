@@ -139,7 +139,9 @@ Jede Aktion hat ihre eigene Bewegung:
 - **Fenster:** Karte, Menü und Wörterliste blenden beim Öffnen ein und fahren
   leicht heran.
 
-Alle Bewegungen lassen sich im Menü über *Flip-Animation* abschalten.
+Ist *Flip-Animation* im Menü abgeschaltet, bleiben nur dezente Übergänge:
+Beim Aufdecken blendet das Wort an Ort um, beim Weiter- und Zurückgehen
+gleitet es seitlich durch die Karte.
 
 Das Fenster ist **immer im Vordergrund**, hat keinen Titel, kein Minimieren und
 kein Maximieren, weisse Karte mit schwarzem Text in Graustufen, abgerundete Ecken

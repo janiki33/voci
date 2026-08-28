@@ -1533,13 +1533,43 @@ class Karte(QWidget):
         self.update()
 
     def uebergang(self, commit, richtung=+1):
-        """Standard-Übergang für alles: Karte dreht sich. Ist die
-        Flip-Animation abgeschaltet, gleitet stattdessen nur das Wort -
-        die dezente Variante."""
+        """Wortwechsel (weiter/zurück): Karte dreht sich; ist die
+        Flip-Animation abgeschaltet, gleitet stattdessen nur das Wort."""
         if self.app.einst["flip_animation"]:
             self.drehe(commit, richtung)
         else:
             self.gleite(commit, richtung)
+
+    def aufdecken(self, commit):
+        """FR/DE aufdecken: Karte dreht sich; ist die Flip-Animation
+        abgeschaltet, blendet das Wort nur um - beim Aufdecken bleibt es
+        an Ort, seitliches Gleiten gehört zum Wortwechsel."""
+        if self.app.einst["flip_animation"]:
+            self.drehe(commit, +1)
+        else:
+            self.fade(commit)
+
+    def fade(self, commit):
+        """Wort weich aus- und mit neuem Inhalt wieder einblenden."""
+        a = self.app
+        if a.animating:
+            return
+        a.animating = True
+
+        def schritt(w):
+            if w < 0.5:
+                self.wort_alpha = 1.0 - kurve(w * 2)
+            else:
+                self.wort_alpha = kurve((w - 0.5) * 2)
+            self.update()
+
+        def fertig():
+            self.wort_alpha = 1.0
+            a.animating = False
+            self.update()
+
+        self.anim = Ablauf(self, 260, schritt, mitte=commit, fertig=fertig)
+        self.anim.start()
 
     def drehe(self, commit, richtung=+1):
         """Echter Flip: Die Karte dreht sich um die Hochachse, auf halbem Weg
@@ -1979,7 +2009,7 @@ class Voci:
         def commit():
             self.side = "de" if self.side == "fr" else "fr"
             self.flips += 1
-        self.karte.uebergang(commit, +1)
+        self.karte.aufdecken(commit)
 
     def bewerte(self, taste):
         """c/v/b: Faktor anpassen, Karte aufleuchten lassen, weiter. Nach
@@ -2008,7 +2038,7 @@ class Voci:
 
             def commit():
                 self.side = self.start_side
-            self.karte.uebergang(commit, +1)
+            self.karte.aufdecken(commit)
         else:
             self.karte.update()
 
