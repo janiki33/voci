@@ -10,6 +10,13 @@ on:
 permissions:
   contents: write
 
+# Nur ein Lauf aufs Mal: Bei mehreren Pushes kurz hintereinander kamen sich
+# die Release-Jobs gegenseitig in die Quere (403 beim Veröffentlichen).
+# Neuere Läufe warten, statt parallel zu veröffentlichen.
+concurrency:
+  group: voci-build
+  cancel-in-progress: false
+
 jobs:
   # Der Tag wird einmal bestimmt und an alle Jobs weitergereicht. Sonst könnte
   # er zwischen den Jobs über Mitternacht springen, und die eingebaute Version
@@ -171,7 +178,10 @@ jobs:
           ls -la out
           TAG="${{ needs.version.outputs.tag }}"
           echo "Tag: $TAG"
-          gh release create "$TAG" out/* --repo "$REPO" \
+          # Bis zu drei Anläufe: Die API antwortet gelegentlich mit einem
+          # vorübergehenden 403, obwohl die Rechte stimmen.
+          for versuch in 1 2 3; do
+            if gh release create "$TAG" out/* --repo "$REPO" \
             --target "$GITHUB_SHA" --latest \
             --title "Voci - Stand $(date -u +%d.%m.%Y)" \
             --notes-file - <<'NOTES'
@@ -226,6 +236,14 @@ jobs:
           [Datei zur Analyse einreichen](https://www.microsoft.com/en-us/wdsi/filesubmission).
           Das wird meist innert weniger Tage korrigiert und gilt dann für alle.
           NOTES
+            then break; fi
+            if [ "$versuch" = 3 ]; then
+              echo "Veröffentlichen nach 3 Anläufen gescheitert"; exit 1
+            fi
+            echo "Anlauf $versuch gescheitert - warte 30 s"
+            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
+            sleep 30
+          done
 
           # Ältere Releases aufräumen, damit die Seite übersichtlich bleibt.
           # Schlägt das fehl, ist das kein Grund, den Build rot zu färben.
