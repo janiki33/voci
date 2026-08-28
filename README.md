@@ -18,10 +18,10 @@ liegen die fertigen Dateien:
 | **`Voci-Windows-Ordner.zip`** | **Für Windows die empfohlene Fassung.** Entpacken, `Voci.exe` im Ordner starten, **kein Python nötig**. |
 | `Voci.exe` | Windows als eine einzige Datei – bequemer, wird aber von Virenscannern gerne fälschlich gemeldet. |
 | `Voci-macOS.zip` | macOS mit Apple Silicon (M1–M4). Entpacken, `Voci.app` starten. |
-| `Voci.pyw` | Alle Systeme mit installiertem Python – die einzige Variante ganz ohne Warnung. |
+| `Voci.pyw` | Alle Systeme mit installiertem Python – die einzige Variante ganz ohne Warnung. Braucht einmalig `pip install PySide6`. |
 
-Auf **Intel-Macs** läuft die `Voci-macOS.zip` nicht; dort nimmst du die `Voci.pyw`
-und startest sie mit `python3 Voci.pyw`.
+Auf **Intel-Macs** läuft die `Voci-macOS.zip` nicht; dort nimmst du die `Voci.pyw`,
+installierst einmalig `pip3 install PySide6` und startest mit `python3 Voci.pyw`.
 
 Alles wird bei jeder Änderung automatisch von GitHub Actions neu gebaut
 (siehe `.github/workflows/build.yml`).
@@ -208,13 +208,14 @@ Installationen holen sie sich beim nächsten Start von selbst.
 
 Quelle der Vokabeln: `Voca_étape_R1_BMV_B_2025` (Word-Dokument, Tabelle FR|DE).
 
-## Ordnergrösse
+## Technik
 
-Die Windows-Ordnerfassung enthält Tcl/Tk, das Zeitzonendaten, Sprachkataloge
-und rund 80 Zeichensatztabellen mitbringt — über 700 Dateien, von denen Voci
-keine einzige braucht. `build/prune_tcltk.py` räumt die beim Bauen weg
-(944 → gut 200 Dateien). Für macOS läuft dasselbe Skript mit `--vorsichtig`,
-dort fallen nur Zeitzonen und Sprachkataloge weg.
+Die Oberfläche ist mit **Qt (PySide6)** gebaut. Damit zeichnet das Programm
+mit echtem Per-Pixel-Alpha: weiche Schatten und runde Ecken auf allen
+Plattformen, kantengeglättete Knöpfe, Kippschalter und Segmentregler im
+Apple-Stil, und die Flip-Animation läuft über Qt-Animationskurven. Die
+gesamte Logik (Lern-Algorithmus, Updater, Speicherung) ist davon getrennt
+und reines Python ohne UI-Abhängigkeit.
 
 ## Icon
 

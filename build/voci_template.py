@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Voci – Vokabel-Flashcard, immer im Vordergrund. Läuft unter Windows, macOS
-und Linux.
+Voci – Vokabel-Flashcard, immer im Vordergrund. Gebaut auf Qt (PySide6).
+Läuft unter Windows, macOS und Linux.
 
 Bedienung:
   Klick auf die Karte        -> flippt FR <-> DE (beide Richtungen)
@@ -17,11 +17,12 @@ Bedienung:
   Taste c / v / b            -> Wort bewerten: kann ich nicht / neutral / kann ich
   Pfeil links / rechts       -> zurück / weiter (abschaltbar im Menü)
 
-Wenn das Fenster den Fokus verliert und das aktuelle Wort schon geflippt
-wurde, kommt nach 5 Sekunden automatisch das nächste Wort
-(ein feiner Balken unten zählt runter) – ausser man tabbt vorher zurück.
+Wenn das Programm den Fokus verliert und das aktuelle Wort schon geflippt
+wurde, kommt nach 5 Sekunden automatisch das nächste Wort (ein feiner Balken
+unten zählt runter) – ausser man tabbt vorher zurück.
 """
 
+import base64
 import json
 import math
 import os
@@ -32,43 +33,42 @@ import subprocess
 import sys
 import tempfile
 import threading
-import tkinter as tk
-import tkinter.font as tkfont
 import urllib.error
 import urllib.request
 import zipfile
 
+try:
+    from PySide6.QtCore import (Qt, QTimer, QRectF, QPointF, QVariantAnimation,
+                                QEasingCurve, QSize)
+    from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication,
+                               QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor)
+    from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
+                                   QMenu, QPushButton, QScrollArea, QVBoxLayout,
+                                   QWidget)
+except ImportError:                                  # Python-Fassung ohne PySide6
+    sys.stderr.write(
+        "Voci braucht PySide6. Einmalig installieren mit:\n"
+        "    pip install PySide6\n")
+    try:
+        import tkinter.messagebox
+        tkinter.messagebox.showinfo(
+            "Voci", "Voci braucht PySide6.\n\nEinmalig installieren mit:\n"
+                    "pip install PySide6")
+    except Exception:
+        pass
+    sys.exit(1)
+
 EINGEBAUTE_VOCAB = json.loads(r'''__VOCAB_JSON__''')
 VERSION = "__VERSION__"
 
-# Fenstersymbol (Trikolore) als eingebettetes PNG - ohne das zeigt Tk in der
-# Taskleiste sein eigenes Feder-Logo.
+# Fenstersymbol (Trikolore) als eingebettetes PNG.
 ICON_B64 = "__ICON_B64__"
 
 IS_WIN = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"
 
-# DPI-Awareness MUSS vor dem ersten Tk-Fenster gesetzt werden, sonst skaliert
-# Windows das Fenster als Bitmap hoch -> alles sieht verpixelt/unscharf aus.
-if IS_WIN:
-    import ctypes
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)   # per-monitor
-    except Exception:
-        try:
-            ctypes.windll.user32.SetProcessDPIAware()
-        except Exception:
-            pass
-    try:
-        # Eigene Kennung, damit die Taskleiste das Fenstersymbol verwendet und
-        # nicht das des startenden Programms.
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "ch.janiki33.voci")
-    except Exception:
-        pass
-
 # ---------------------------------------------------------------- Farben
-# Zwei Paletten, umschaltbar mit der Taste d
+# Zwei Paletten (Apple-Systemtöne), umschaltbar mit der Taste d
 THEMEN = {
     "hell": {
         "bg": (255, 255, 255),      # Karte
@@ -76,11 +76,12 @@ THEMEN = {
         "zweit": (134, 134, 139),   # Sekundärtext
         "hover": (242, 242, 247),   # Knopf beim Hovern
         "gruppe": (242, 242, 247),  # Gruppenflächen im Menü
-        "rand": "#e3e3e8",          # Haarlinie
-        "timer": "#e8e8ed",         # Countdown-Balken (dezent)
+        "rand": (227, 227, 232),    # Haarlinie
+        "timer": (232, 232, 237),   # Countdown-Balken (dezent)
         "akzent": (10, 132, 255),   # Systemblau
         "gruen": (52, 199, 89),     # Schalter an
         "grau": (209, 209, 214),    # Schalter aus
+        "schatten": (0, 0, 0, 46),
     },
     "dunkel": {
         "bg": (0, 0, 0),
@@ -88,81 +89,38 @@ THEMEN = {
         "zweit": (152, 152, 157),
         "hover": (28, 28, 30),
         "gruppe": (22, 22, 24),
-        "rand": "#2c2c2e",
-        "timer": "#2c2c2e",
+        "rand": (44, 44, 46),
+        "timer": (44, 44, 46),
         "akzent": (10, 132, 255),
         "gruen": (48, 209, 88),
         "grau": (57, 57, 61),
+        "schatten": (0, 0, 0, 110),
     },
 }
 MAC_ROT = (255, 95, 87)             # Schliessknopf beim Hovern
 MAC_ROT_SYMBOL = (96, 8, 4)
-KEY = "#00fe00"               # Farbschlüssel für runde Ecken (Windows)
-FALLBACK_VOID = "#bdbdbd"     # falls die Plattform keine Transparenz kann
 
 # ---------------------------------------------------------------- Verhalten
-AUTO_DELAY_MS = 5000          # 5 s bis zum Auto-Weiter
-FLIPS_NEEDED = 1              # Timer schon nach dem ersten Flip
-HISTORY_MAX = 10              # max. 10 Wörter zurück
-POLL_MS = 250                 # Fokus-Polling (Windows)
+FLIPS_NEEDED = 1                    # Auto-Weiter schon nach dem ersten Flip
+HISTORY_MAX = 10                    # max. 10 Wörter zurück
 
-CURSOR_HAND = "pointinghand" if IS_MAC else "hand2"
-if IS_MAC:
-    CURSOR_EDGE = {"n": "resizeupdown", "s": "resizeupdown",
-                   "w": "resizeleftright", "e": "resizeleftright"}
-else:
-    CURSOR_EDGE = {"n": "sb_v_double_arrow", "s": "sb_v_double_arrow",
-                   "w": "sb_h_double_arrow", "e": "sb_h_double_arrow",
-                   "nw": "top_left_corner", "ne": "top_right_corner",
-                   "sw": "bottom_left_corner", "se": "bottom_right_corner"}
-
-FONT_WUNSCH = (("SF Pro Text", "Helvetica Neue", "Lucida Grande") if IS_MAC else
-               ("Segoe UI", "Tahoma") if IS_WIN else
-               ("DejaVu Sans", "Liberation Sans", "Arial"))
+FONT_WUNSCH = (["SF Pro Text", "Helvetica Neue"] if IS_MAC else
+               ["Segoe UI Variable", "Segoe UI"] if IS_WIN else
+               ["Inter", "Cantarell", "DejaVu Sans"])
 
 
 def hexc(c):
     return "#%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2]))
 
 
+def qfarbe(c):
+    return QColor(int(c[0]), int(c[1]), int(c[2]), int(c[3]) if len(c) > 3 else 255)
+
+
 def blend(a, b, t):
     return (a[0] + (b[0] - a[0]) * t,
             a[1] + (b[1] - a[1]) * t,
             a[2] + (b[2] - a[2]) * t)
-
-
-def dist_seg(px, py, x1, y1, x2, y2):
-    dx, dy = x2 - x1, y2 - y1
-    L = dx * dx + dy * dy
-    t = 0.0 if L == 0 else max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / L))
-    return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
-
-
-def render_button(size, radius, disc_color, segs, seg_w, icon_color, bg):
-    """Zeichnet Kreis + Linien-Icon kantengeglättet (Distanzfeld-AA) in ein
-    PhotoImage – Tk-Canvas-Formen selbst sind unter Windows hart gepixelt."""
-    cx = cy = size / 2.0
-    rows = []
-    for y in range(size):
-        py = y + 0.5
-        cells = []
-        for x in range(size):
-            px = x + 0.5
-            col = bg
-            d = math.hypot(px - cx, py - cy) - radius
-            a = 0.5 - d
-            if a > 0:
-                col = blend(col, disc_color, min(a, 1.0))
-            for (x1, y1, x2, y2) in segs:
-                d = dist_seg(px, py, cx + x1, cy + y1, cx + x2, cy + y2) - seg_w / 2.0
-                a = 0.5 - d
-                if a > 0:
-                    col = blend(col, icon_color, min(a, 1.0))
-            cells.append(hexc(col))
-        rows.append("{" + " ".join(cells) + "}")
-    img = tk.PhotoImage(width=size, height=size)
-    img.put(" ".join(rows))
-    return img
 
 
 def icon_segs(tag, r):
@@ -176,12 +134,6 @@ def icon_segs(tag, r):
     if tag == "back":
         return [(a, 0, -a, 0), (-a + h, -h, -a, 0), (-a + h, h, -a, 0)]
     return []
-
-
-def rounded_rect(cnv, x1, y1, x2, y2, r, **kw):
-    pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
-           x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
-    return cnv.create_polygon(pts, smooth=True, **kw)
 
 
 # ---------------------------------------------------------------- Updates
@@ -483,48 +435,885 @@ def startbefehl_fuer(art, ziel):
     return '"%s"' % ziel
 
 
+
+
+# ---------------------------------------------------------------- Qt-Grundlagen
+SCHATTEN = 22                     # weicher Rand um jedes Panel
+RADIUS = 20                       # Eckenradius der Karten
+
+
+def basisfont(pixel, fett=False):
+    f = QFont()
+    f.setFamilies(FONT_WUNSCH)
+    f.setPixelSize(int(pixel))
+    f.setWeight(QFont.Weight.DemiBold if fett else QFont.Weight.Normal)
+    return f
+
+
+def panel_zeichnen(p, breite, hoehe, thema):
+    """Weicher Schatten, Kartenfläche, Haarlinie – gemeinsame Basis aller
+    Fenster. Liefert das innere Karten-Rechteck."""
+    t = THEMEN[thema]
+    rect = QRectF(SCHATTEN, SCHATTEN, breite - 2 * SCHATTEN, hoehe - 2 * SCHATTEN)
+    grund = qfarbe(t["schatten"])
+    for i in range(SCHATTEN - 4, 0, -2):
+        w = QColor(grund)
+        w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2 * 0.5))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(w)
+        p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2), RADIUS + i, RADIUS + i)
+    p.setBrush(qfarbe(t["bg"]))
+    p.setPen(QPen(qfarbe(t["rand"]), 1))
+    p.drawRoundedRect(rect, RADIUS, RADIUS)
+    return rect
+
+
+class Panel(QWidget):
+    """Randloses, durchscheinend gerahmtes Fenster mit Titelzeile und X."""
+
+    def __init__(self, app, titel, breite, hoehe):
+        super().__init__(None)
+        self.app = app
+        self.titel = titel
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint
+                            | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.resize(breite + 2 * SCHATTEN, hoehe + 2 * SCHATTEN)
+        self._zieh = None
+        self._x_heiss = False
+        self.setMouseTracking(True)
+
+        self.inhalt = QWidget(self)
+        self.inhalt.setGeometry(SCHATTEN + 16, SCHATTEN + 40,
+                                breite - 32, hoehe - 52)
+        self.inhalt.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+    # -- Zeichnen
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        t = THEMEN[self.app.thema]
+        rect = panel_zeichnen(p, self.width(), self.height(), self.app.thema)
+        p.setPen(qfarbe(t["fg"]))
+        p.setFont(basisfont(15, fett=True))
+        p.drawText(QRectF(rect.x() + 16, rect.y() + 8, rect.width() - 60, 28),
+                   Qt.AlignmentFlag.AlignVCenter, self.titel)
+        # X-Knopf
+        bx, by, r = self._x_pos()
+        if self._x_heiss:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(qfarbe(MAC_ROT))
+            p.drawEllipse(QPointF(bx, by), r, r)
+            stift = qfarbe(MAC_ROT_SYMBOL)
+        else:
+            stift = qfarbe(t["zweit"])
+        p.setPen(QPen(stift, 1.6, c=Qt.PenCapStyle.RoundCap))
+        a = r * 0.42
+        p.drawLine(QPointF(bx - a, by - a), QPointF(bx + a, by + a))
+        p.drawLine(QPointF(bx - a, by + a), QPointF(bx + a, by - a))
+
+    def _x_pos(self):
+        return self.width() - SCHATTEN - 22, SCHATTEN + 22, 10
+
+    # -- Maus: X, sonst ziehen
+    def mousePressEvent(self, e):
+        bx, by, r = self._x_pos()
+        pos = e.position()
+        if (pos.x() - bx) ** 2 + (pos.y() - by) ** 2 <= (r + 4) ** 2:
+            self.close()
+            return
+        self._zieh = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, e):
+        bx, by, r = self._x_pos()
+        pos = e.position()
+        heiss = (pos.x() - bx) ** 2 + (pos.y() - by) ** 2 <= (r + 4) ** 2
+        if heiss != self._x_heiss:
+            self._x_heiss = heiss
+            self.update()
+        if self._zieh is not None and e.buttons() & Qt.MouseButton.LeftButton:
+            self.move(e.globalPosition().toPoint() - self._zieh)
+
+    def mouseReleaseEvent(self, _):
+        self._zieh = None
+
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            self.app.karte.keyPressEvent(e)
+
+    def neben_karte(self):
+        k = self.app.karte.frameGeometry()
+        schirm = self.screen().availableGeometry() if self.screen() else None
+        x = k.right() - SCHATTEN + 8
+        if schirm and x + self.width() > schirm.right():
+            x = max(0, k.left() - self.width() + SCHATTEN - 8)
+        self.move(x, k.top())
+
+
+class Schalter(QWidget):
+    """Apple-Kippschalter: farbige Pille mit weissem Knauf."""
+
+    def __init__(self, app, wert, cb):
+        super().__init__()
+        self.app, self.wert, self.cb = app, wert, cb
+        self.setFixedSize(40, 24)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def paintEvent(self, _):
+        t = THEMEN[self.app.thema]
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(qfarbe(t["gruen"] if self.wert else t["grau"]))
+        p.drawRoundedRect(QRectF(0, 1, 40, 22), 11, 11)
+        p.setBrush(QColor("white"))
+        kx = 40 - 11 if self.wert else 11
+        p.drawEllipse(QPointF(kx, 12), 9, 9)
+
+    def mouseReleaseEvent(self, _):
+        self.wert = not self.wert
+        self.update()
+        self.cb(self.wert)
+
+
+class Segmente(QWidget):
+    """Segmentregler: Pillenhintergrund, aktives Segment als helle Karte."""
+
+    def __init__(self, app, optionen, wert, cb, dehnen=False):
+        super().__init__()
+        self.app, self.optionen, self.wert, self.cb = app, optionen, wert, cb
+        self.dehnen = dehnen
+        self.font_n = basisfont(12)
+        self.font_f = basisfont(12, fett=True)
+        fm = QFontMetrics(self.font_f)
+        self._breiten = [fm.horizontalAdvance(text) + 22 for _, text in optionen]
+        self.setFixedHeight(26)
+        if not dehnen:
+            self.setFixedWidth(sum(self._breiten))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def _spalten(self):
+        if self.dehnen:
+            teil = self.width() / len(self.optionen)
+            return [teil] * len(self.optionen)
+        return self._breiten
+
+    def paintEvent(self, _):
+        t = THEMEN[self.app.thema]
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(qfarbe(t["gruppe"]))
+        p.drawRoundedRect(QRectF(0, 0, self.width(), 26), 13, 13)
+        x = 0.0
+        for (wert, text), b in zip(self.optionen, self._spalten()):
+            if wert == self.wert:
+                p.setBrush(qfarbe(t["bg"]))
+                p.setPen(QPen(qfarbe(t["rand"]), 1))
+                p.drawRoundedRect(QRectF(x + 2, 2, b - 4, 22), 11, 11)
+                p.setPen(Qt.PenStyle.NoPen)
+            p.setPen(qfarbe(t["fg"]))
+            p.setFont(self.font_f if wert == self.wert else self.font_n)
+            p.drawText(QRectF(x, 0, b, 26), Qt.AlignmentFlag.AlignCenter, text)
+            p.setPen(Qt.PenStyle.NoPen)
+            x += b
+
+    def mouseReleaseEvent(self, e):
+        x = 0.0
+        for (wert, _), b in zip(self.optionen, self._spalten()):
+            if x <= e.position().x() < x + b:
+                if wert != self.wert:
+                    self.wert = wert
+                    self.update()
+                    self.cb(wert)
+                return
+            x += b
+
+
+class HakenKreis(QWidget):
+    """Blauer Haken-Kreis für die Set-Auswahl."""
+
+    def __init__(self, app, wert, cb):
+        super().__init__()
+        self.app, self.wert, self.cb = app, wert, cb
+        self.setFixedSize(24, 24)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def paintEvent(self, _):
+        t = THEMEN[self.app.thema]
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self.wert:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(qfarbe(t["akzent"]))
+            p.drawEllipse(QPointF(12, 12), 10, 10)
+            p.setPen(QPen(QColor("white"), 2,
+                          c=Qt.PenCapStyle.RoundCap, j=Qt.PenJoinStyle.RoundJoin))
+            pfad = QPainterPath(QPointF(7.2, 12.4))
+            pfad.lineTo(10.6, 15.8)
+            pfad.lineTo(16.8, 8.6)
+            p.drawPath(pfad)
+        else:
+            p.setPen(QPen(qfarbe(t["grau"]), 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(12, 12), 10, 10)
+
+    def mouseReleaseEvent(self, _):
+        self.cb()
+
+
+class Gruppe(QFrame):
+    """Abgerundete Gruppenfläche im Stil der macOS-Systemeinstellungen."""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        t = THEMEN[app.thema]
+        self.setStyleSheet("QFrame { background: %s; border-radius: 10px; }"
+                           % hexc(t["gruppe"]))
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 2, 12, 2)
+        lay.setSpacing(0)
+        self.lay = lay
+        self._erste = True
+
+    def zeile(self, links, rechts):
+        if not self._erste:
+            strich = QFrame()
+            strich.setFixedHeight(1)
+            strich.setStyleSheet("background: %s; border-radius: 0;"
+                                 % hexc(THEMEN[self.app.thema]["rand"]))
+            self.lay.addWidget(strich)
+        self._erste = False
+        z = QWidget()
+        z.setStyleSheet("background: transparent;")
+        h = QHBoxLayout(z)
+        h.setContentsMargins(0, 7, 0, 7)
+        if isinstance(links, str):
+            lab = QLabel(links)
+            lab.setFont(basisfont(13))
+            lab.setStyleSheet("color: %s; background: transparent;"
+                              % hexc(THEMEN[self.app.thema]["fg"]))
+            h.addWidget(lab)
+        else:
+            h.addWidget(links)
+        h.addStretch(1)
+        for w in (rechts if isinstance(rechts, (list, tuple)) else [rechts]):
+            h.addWidget(w)
+        self.lay.addWidget(z)
+        return z
+
+
+# ---------------------------------------------------------------- Menü
+class MenuFenster(Panel):
+    def __init__(self, app, tab="einstellungen"):
+        super().__init__(app, "Voci", 320, 396)
+        self.tab = tab
+        self.regionen = {}           # Name -> Wirkung (auch für Tests)
+        self._bauen()
+        self.neben_karte()
+
+    def ausloesen(self, name):
+        if name in self.regionen:
+            self.regionen[name]()
+            return True
+        return False
+
+    def _bauen(self):
+        for kind in self.inhalt.findChildren(QWidget):
+            kind.setParent(None)
+        self.regionen = {}
+        wurzel = QVBoxLayout(self.inhalt) if self.inhalt.layout() is None \
+            else self.inhalt.layout()
+        while wurzel.count():
+            rest = wurzel.takeAt(0)
+            if rest.widget():
+                rest.widget().deleteLater()
+        wurzel.setContentsMargins(0, 0, 0, 0)
+        wurzel.setSpacing(12)
+
+        tabs = Segmente(self.app, [("einstellungen", "Einstellungen"),
+                                   ("sets", "Voci-Sets")],
+                        self.tab, self._tab_wechsel, dehnen=True)
+        wurzel.addWidget(tabs)
+        self.regionen["tab-einstellungen"] = lambda: self._tab_wechsel("einstellungen")
+        self.regionen["tab-sets"] = lambda: self._tab_wechsel("sets")
+        self.regionen["close"] = self.close
+
+        if self.tab == "einstellungen":
+            self._tab_einstellungen(wurzel)
+        else:
+            self._tab_sets(wurzel)
+        wurzel.addStretch(1)
+
+    def _tab_wechsel(self, tab):
+        self.tab = tab
+        self._bauen()
+
+    def _tab_einstellungen(self, wurzel):
+        a = self.app
+        g1 = Gruppe(a)
+
+        def schalter(name, text, wert, cb):
+            s = Schalter(a, wert, lambda _an: cb())
+            g = g1 if name in ("dark", "vorne", "pfeile", "flip") else g2
+            g.zeile(text, s)
+            self.regionen[name] = cb
+
+        schalter("dark", "Dark Mode", a.thema == "dunkel", a.toggle_thema)
+        schalter("vorne", "Immer im Vordergrund", a.einst["immer_vorne"],
+                 lambda: a.einstellung_kippen("vorne", "immer_vorne"))
+        schalter("pfeile", "Pfeiltasten-Navigation", a.einst["pfeiltasten"],
+                 lambda: a.einstellung_kippen("pfeile", "pfeiltasten"))
+        schalter("flip", "Flip-Animation", a.einst["flip_animation"],
+                 lambda: a.einstellung_kippen("flip", "flip_animation"))
+        wurzel.addWidget(g1)
+
+        g2 = Gruppe(a)
+        s = Schalter(a, a.einst["auto_weiter"],
+                     lambda _an: a.einstellung_kippen("auto", "auto_weiter"))
+        g2.zeile("Auto-Weiter", s)
+        self.regionen["auto"] = lambda: a.einstellung_kippen("auto", "auto_weiter")
+
+        def dauer(w):
+            a.einst["auto_dauer"] = w
+            speichere_einstellungen(a.einst)
+        seg = Segmente(a, [(3, "3 s"), (5, "5 s"), (10, "10 s")],
+                       int(a.einst["auto_dauer"]), dauer)
+        g2.zeile("Wartezeit", seg)
+        for wert in (3, 5, 10):
+            self.regionen["dauer-%d" % wert] = lambda w=wert: (dauer(w),
+                                                               self._bauen())
+
+        def sprache(w):
+            if w != a.start_side:
+                a.toggle_start()
+        seg2 = Segmente(a, [("fr", "FR"), ("de", "DE")], a.start_side, sprache)
+        g2.zeile("Startsprache", seg2)
+        for wert in ("fr", "de"):
+            self.regionen["sprache-%s" % wert] = lambda w=wert: (sprache(w),
+                                                                 self._bauen())
+        wurzel.addWidget(g2)
+
+        hinweis = QLabel("Bewerten:  c kann ich nicht  ·  v neutral  ·  b kann ich")
+        hinweis.setFont(basisfont(11))
+        hinweis.setStyleSheet("color: %s; background: transparent;"
+                              % hexc(THEMEN[a.thema]["zweit"]))
+        hinweis.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        wurzel.addWidget(hinweis)
+
+    def _tab_sets(self, wurzel):
+        a = self.app
+        g = Gruppe(a)
+        for satz in a.sets:
+            aktiv = satz["id"] in a.einst["sets"]
+
+            def kippen(sid=satz["id"]):
+                gewaehlt = set(a.einst["sets"])
+                if sid in gewaehlt and len(gewaehlt) > 1:
+                    gewaehlt.discard(sid)
+                else:
+                    gewaehlt.add(sid)
+                a.einst["sets"] = sorted(gewaehlt)
+                speichere_einstellungen(a.einst)
+                self._bauen()
+
+            haken = HakenKreis(a, aktiv, kippen)
+            name = QLabel("%s   " % satz["name"])
+            name.setFont(basisfont(13))
+            name.setStyleSheet("color: %s; background: transparent;"
+                               % hexc(THEMEN[a.thema]["fg"]))
+            anzahl = QLabel("%d Wörter" % len(satz["indizes"]))
+            anzahl.setFont(basisfont(11))
+            anzahl.setStyleSheet("color: %s; background: transparent;"
+                                 % hexc(THEMEN[a.thema]["zweit"]))
+            links = QWidget()
+            links.setStyleSheet("background: transparent;")
+            h = QHBoxLayout(links)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.addWidget(haken)
+            h.addSpacing(8)
+            h.addWidget(name)
+            h.addWidget(anzahl)
+
+            punkte = QPushButton("⋯")
+            punkte.setFlat(True)
+            punkte.setFont(basisfont(15, fett=True))
+            punkte.setCursor(Qt.CursorShape.PointingHandCursor)
+            punkte.setFixedWidth(30)
+            punkte.setStyleSheet(
+                "QPushButton { color: %s; background: transparent; border: none; }"
+                % hexc(THEMEN[a.thema]["zweit"]))
+            punkte.clicked.connect(lambda _=False, k=punkte: self._optionen(k))
+            g.zeile(links, punkte)
+            self.regionen["set-%s" % satz["id"]] = kippen
+            self.regionen["punkte"] = lambda k=punkte: self._optionen(k)
+        wurzel.addWidget(g)
+
+    def _optionen(self, anker):
+        a = self.app
+        t = THEMEN[a.thema]
+        menue = QMenu(self)
+        menue.setStyleSheet(
+            "QMenu { background: %s; color: %s; border: 1px solid %s;"
+            " border-radius: 8px; padding: 4px; }"
+            "QMenu::item { padding: 6px 14px; border-radius: 5px; }"
+            "QMenu::item:selected { background: %s; }"
+            % (hexc(t["bg"]), hexc(t["fg"]), hexc(t["rand"]), hexc(t["hover"])))
+        schwer = QAction("Schwere Wörter üben (Faktor ≥ 1)", menue)
+        schwer.setCheckable(True)
+        schwer.setChecked(a.einst["schwere_modus"])
+        schwer.triggered.connect(a.schwere_kippen)
+        menue.addAction(schwer)
+        liste = QAction("Wörterliste anzeigen", menue)
+        liste.triggered.connect(a.liste_zeigen)
+        menue.addAction(liste)
+        menue.exec(anker.mapToGlobal(anker.rect().bottomLeft()))
+
+
+# ---------------------------------------------------------------- Wörterliste
+class ListeFenster(Panel):
+    def __init__(self, app):
+        super().__init__(app, "Wörterliste", 370, 430)
+        self.sortierung = getattr(app, "liste_sortierung", "az")
+        self.regionen = {"close": self.close}
+        self._bauen()
+        self.neben_karte()
+
+    def ausloesen(self, name):
+        if name in self.regionen:
+            self.regionen[name]()
+            return True
+        return False
+
+    def _bauen(self):
+        a = self.app
+        t = THEMEN[a.thema]
+        wurzel = QVBoxLayout(self.inhalt)
+        wurzel.setContentsMargins(0, 0, 0, 0)
+        wurzel.setSpacing(8)
+
+        kopf = QWidget()
+        kopf.setStyleSheet("background: transparent;")
+        h = QHBoxLayout(kopf)
+        h.setContentsMargins(0, 0, 0, 0)
+        seg = Segmente(a, [("az", "A–Z"), ("wertung", "Wertung")],
+                       self.sortierung, self._sortieren)
+        h.addWidget(seg)
+        h.addStretch(1)
+        alle = QPushButton("Alle zurücksetzen")
+        alle.setFlat(True)
+        alle.setFont(basisfont(11))
+        alle.setCursor(Qt.CursorShape.PointingHandCursor)
+        alle.setStyleSheet("QPushButton { color: %s; background: transparent;"
+                           " border: none; }" % hexc(WERTUNG_BLITZ["c"]))
+        alle.clicked.connect(self.alle_zuruecksetzen)
+        h.addWidget(alle)
+        wurzel.addWidget(kopf)
+        self.regionen["reset-alle"] = self.alle_zuruecksetzen
+        for wert in ("az", "wertung"):
+            self.regionen["sortier-%s" % wert] = lambda w=wert: self._sortieren(w)
+
+        self.rollbereich = QScrollArea()
+        self.rollbereich.setWidgetResizable(True)
+        self.rollbereich.setFrameShape(QFrame.Shape.NoFrame)
+        self.rollbereich.setStyleSheet(
+            "QScrollArea { background: transparent; }"
+            "QScrollBar:vertical { background: transparent; width: 6px; }"
+            "QScrollBar::handle:vertical { background: %s; border-radius: 3px;"
+            " min-height: 30px; }"
+            "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }"
+            % hexc(t["grau"]))
+        wurzel.addWidget(self.rollbereich, 1)
+        self._fuellen()
+
+    def _sortieren(self, wie):
+        self.sortierung = wie
+        self.app.liste_sortierung = wie
+        self._fuellen()
+
+    def reihenfolge(self):
+        a = self.app
+        indizes = list(a.aktive_indizes())
+        if self.sortierung == "wertung":
+            indizes.sort(key=lambda i: (-wertung_prozent(a.faktor(i)),
+                                        a.vocab[i]["fr"].lower()))
+        else:
+            indizes.sort(key=lambda i: a.vocab[i]["fr"].lower())
+        return indizes
+
+    def _fuellen(self):
+        a = self.app
+        t = THEMEN[a.thema]
+        self.zeilen = self.reihenfolge()
+        rumpf = QWidget()
+        rumpf.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(rumpf)
+        lay.setContentsMargins(0, 0, 6, 0)
+        lay.setSpacing(0)
+        fm = QFontMetrics(basisfont(12))
+        for n, i in enumerate(self.zeilen):
+            if n:
+                strich = QFrame()
+                strich.setFixedHeight(1)
+                strich.setStyleSheet("background: %s;" % hexc(t["rand"]))
+                lay.addWidget(strich)
+            prozent = wertung_prozent(a.faktor(i))
+            z = QWidget()
+            z.setStyleSheet("background: transparent;")
+            h = QHBoxLayout(z)
+            h.setContentsMargins(2, 6, 0, 6)
+            text = "%s – %s" % (a.vocab[i]["fr"], a.vocab[i]["de"])
+            wort = QLabel(fm.elidedText(text, Qt.TextElideMode.ElideRight, 214))
+            wort.setFont(basisfont(12))
+            wort.setStyleSheet("color: %s; background: transparent;"
+                               % hexc(t["fg"]))
+            h.addWidget(wort, 1)
+            punkt = QLabel("●")
+            punkt.setFont(basisfont(11))
+            punkt.setStyleSheet("color: %s; background: transparent;"
+                                % hexc(wertung_farbe(prozent)))
+            h.addWidget(punkt)
+            pz = QLabel("%d%%" % prozent)
+            pz.setFont(basisfont(11))
+            pz.setFixedWidth(38)
+            pz.setStyleSheet("color: %s; background: transparent;"
+                             % hexc(t["zweit"]))
+            h.addWidget(pz)
+            reset = QPushButton("↺")
+            reset.setFlat(True)
+            reset.setFixedWidth(24)
+            reset.setCursor(Qt.CursorShape.PointingHandCursor)
+            reset.setStyleSheet("QPushButton { color: %s; background:"
+                                " transparent; border: none; }" % hexc(t["zweit"]))
+            reset.clicked.connect(lambda _=False, idx=i: self.reset(idx))
+            h.addWidget(reset)
+            lay.addWidget(z)
+        lay.addStretch(1)
+        self.rollbereich.setWidget(rumpf)
+
+    def reset(self, idx):
+        self.app.setze_faktor(idx, 1.0)
+        self._fuellen()
+
+    def alle_zuruecksetzen(self):
+        self.app.faktoren.clear()
+        speichere_faktoren(self.app.faktoren)
+        self._fuellen()
+
+
+# ---------------------------------------------------------------- Karte
+class Karte(QWidget):
+    KANTE = 7                      # Greifzone für das Grössenziehen
+
+    def __init__(self, app):
+        super().__init__(None)
+        self.app = app
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint
+                            | Qt.WindowType.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setMouseTracking(True)
+        self.setMinimumSize(280 + 2 * SCHATTEN, 170 + 2 * SCHATTEN)
+        self.resize(400 + 2 * SCHATTEN, 250 + 2 * SCHATTEN)
+        self.move(140, 140)
+
+        self.scale = 1.0
+        self.hover = None
+        self._presse = None
+        self._zieh = None
+        self._resize = None
+        self._wrapcache = {}
+        self.anim = None
+
+    # ---- Geometrie
+    def karte_rect(self):
+        return QRectF(SCHATTEN, SCHATTEN, self.width() - 2 * SCHATTEN,
+                      self.height() - 2 * SCHATTEN)
+
+    def buttons(self):
+        r = self.karte_rect()
+        pad, kr = 30, 15
+        return (("lang", r.x() + pad, r.y() + pad, kr),
+                ("close", r.right() - pad, r.y() + pad, kr),
+                ("back", r.x() + pad, r.bottom() - pad, kr),
+                ("next", r.right() - pad, r.bottom() - pad, kr))
+
+    # ---- Zeichnen
+    def paintEvent(self, _):
+        a = self.app
+        t = THEMEN[a.thema]
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        voll = self.karte_rect()
+        halb = max(2.0, voll.width() / 2 * max(self.scale, 0.02))
+        cx = voll.center().x()
+        rect = QRectF(cx - halb, voll.y(), 2 * halb, voll.height())
+
+        # Schatten nur im Ruhezustand (waehrend des Flips flackert er sonst)
+        if self.scale > 0.999:
+            grund = qfarbe(t["schatten"])
+            for i in range(SCHATTEN - 4, 0, -2):
+                w = QColor(grund)
+                w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2 * 0.5))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(w)
+                p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2),
+                                  RADIUS + i, RADIUS + i)
+        flaeche = a.blitz or t["bg"]
+        p.setBrush(qfarbe(flaeche))
+        p.setPen(QPen(qfarbe(t["rand"]), 1))
+        p.drawRoundedRect(rect, RADIUS, RADIUS)
+
+        if self.scale <= 0.12:
+            return
+
+        # Wort: Zeilen stehen fest, nur die Schrift skaliert mit dem Flip
+        zeilen, groesse = self.wrapped(a.word[a.side])
+        f = basisfont(max(1, groesse * self.scale))
+        p.setFont(f)
+        p.setPen(qfarbe(t["fg"]))
+        p.drawText(rect.adjusted(20, 20, -20, -20),
+                   Qt.AlignmentFlag.AlignCenter, zeilen)
+
+        ruhe = self.scale > 0.999
+        for tag, bx, by, r in self.buttons():
+            if tag == "back" and not a.history:
+                continue
+            x = cx + (bx - cx) * self.scale
+            heiss = ruhe and self.hover == tag
+            if heiss:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(qfarbe(MAC_ROT if tag == "close" else t["hover"]))
+                p.drawEllipse(QPointF(x, by), r, r)
+            stift = (qfarbe(MAC_ROT_SYMBOL) if heiss and tag == "close"
+                     else qfarbe(t["zweit"] if tag == "lang" else t["fg"]))
+            p.setPen(QPen(stift, 1.7, c=Qt.PenCapStyle.RoundCap))
+            for (x1, y1, x2, y2) in icon_segs(tag, r):
+                p.drawLine(QPointF(x + x1 * self.scale, by + y1),
+                           QPointF(x + x2 * self.scale, by + y2))
+            if tag == "lang":
+                p.setFont(basisfont(max(1, 11 * self.scale), fett=True))
+                p.drawText(QRectF(x - r, by - r, 2 * r, 2 * r),
+                           Qt.AlignmentFlag.AlignCenter, a.start_side.upper())
+
+        if ruhe and a.countdown_frac:
+            bw = (rect.width() - 120) * a.countdown_frac
+            if bw > 5:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(qfarbe(t["timer"]))
+                p.drawRoundedRect(QRectF(cx - bw / 2, rect.bottom() - 14,
+                                         bw, 4), 2, 2)
+        elif ruhe and a.update_hinweis():
+            p.setFont(basisfont(11))
+            p.setPen(qfarbe(t["zweit"]))
+            p.drawText(QRectF(rect.x(), rect.bottom() - 26, rect.width(), 18),
+                       Qt.AlignmentFlag.AlignCenter, a.update_hinweis())
+
+    def wrapped(self, text):
+        """Zeilenumbruch einmal bei voller Breite bestimmen und merken."""
+        breite = int(self.karte_rect().width() - 76)
+        groesse = self.wortgroesse(text)
+        key = (text, groesse, breite)
+        if key in self._wrapcache:
+            return self._wrapcache[key]
+        fm = QFontMetrics(basisfont(groesse))
+        zeilen, cur = [], ""
+        for token in text.split(" "):
+            probe = token if not cur else cur + " " + token
+            if cur and fm.horizontalAdvance(probe) > breite:
+                zeilen.append(cur)
+                cur = token
+            else:
+                cur = probe
+        if cur:
+            zeilen.append(cur)
+        ergebnis = ("\n".join(zeilen), groesse)
+        self._wrapcache[key] = ergebnis
+        return ergebnis
+
+    def wortgroesse(self, text):
+        r = self.karte_rect()
+        basis = min(r.width() / 19.0, r.height() / 11.5)
+        n = len(text)
+        if n > 70:
+            basis *= 0.60
+        elif n > 45:
+            basis *= 0.74
+        elif n > 28:
+            basis *= 0.87
+        return max(9, int(basis))
+
+    # ---- Flip-Animation
+    def animiere(self, commit):
+        a = self.app
+        if a.animating:
+            return
+        if not a.einst["flip_animation"]:
+            commit()
+            self.scale = 1.0
+            self.update()
+            return
+        a.animating = True
+        anim = QVariantAnimation(self)
+        anim.setDuration(240)
+        anim.setStartValue(0.0)
+        anim.setEndValue(2.0)
+        anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        zustand = {"mitte": False}
+
+        def schritt(wert):
+            if wert >= 1.0 and not zustand["mitte"]:
+                zustand["mitte"] = True
+                commit()
+            self.scale = abs(wert - 1.0)
+            self.update()
+
+        def fertig():
+            self.scale = 1.0
+            a.animating = False
+            self.update()
+        anim.valueChanged.connect(schritt)
+        anim.finished.connect(fertig)
+        anim.start()
+        self.anim = anim
+
+    # ---- Maus
+    def _kante(self, pos):
+        r = self.karte_rect()
+        k = self.KANTE
+        seite = ""
+        if abs(pos.y() - r.y()) <= k:
+            seite += "n"
+        elif abs(pos.y() - r.bottom()) <= k:
+            seite += "s"
+        if abs(pos.x() - r.x()) <= k:
+            seite += "w"
+        elif abs(pos.x() - r.right()) <= k:
+            seite += "e"
+        if not (r.adjusted(-k, -k, k, k).contains(pos)):
+            return None
+        return seite or None
+
+    def _knopf(self, pos):
+        for tag, bx, by, r in self.buttons():
+            if tag == "back" and not self.app.history:
+                continue
+            if (pos.x() - bx) ** 2 + (pos.y() - by) ** 2 <= (r + 3) ** 2:
+                return tag
+        return None
+
+    def mousePressEvent(self, e):
+        self.app.set_active(True)
+        pos = e.position()
+        kante = self._kante(pos)
+        if kante:
+            self._resize = (kante, e.globalPosition().toPoint(),
+                            self.geometry())
+            return
+        self._presse = pos
+        self._zieh = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        self._bewegt = False
+
+    def mouseMoveEvent(self, e):
+        pos = e.position()
+        if self._resize:
+            kante, start, geo = self._resize
+            d = e.globalPosition().toPoint() - start
+            x, y, b, h = geo.x(), geo.y(), geo.width(), geo.height()
+            minb, minh = self.minimumWidth(), self.minimumHeight()
+            if "e" in kante:
+                b = max(minb, geo.width() + d.x())
+            if "s" in kante:
+                h = max(minh, geo.height() + d.y())
+            if "w" in kante:
+                b = max(minb, geo.width() - d.x())
+                x = geo.x() + geo.width() - b
+            if "n" in kante:
+                h = max(minh, geo.height() - d.y())
+                y = geo.y() + geo.height() - h
+            self._wrapcache.clear()
+            self.setGeometry(x, y, b, h)
+            return
+        if self._zieh is not None and e.buttons() & Qt.MouseButton.LeftButton:
+            if self._presse is not None and \
+                    (pos - self._presse).manhattanLength() > 5:
+                self._bewegt = True
+            if self._bewegt:
+                self.move(e.globalPosition().toPoint() - self._zieh)
+            return
+        kante = self._kante(pos)
+        if kante:
+            zeiger = {"n": Qt.CursorShape.SizeVerCursor,
+                      "s": Qt.CursorShape.SizeVerCursor,
+                      "w": Qt.CursorShape.SizeHorCursor,
+                      "e": Qt.CursorShape.SizeHorCursor,
+                      "nw": Qt.CursorShape.SizeFDiagCursor,
+                      "se": Qt.CursorShape.SizeFDiagCursor,
+                      "ne": Qt.CursorShape.SizeBDiagCursor,
+                      "sw": Qt.CursorShape.SizeBDiagCursor}[kante]
+            self.setCursor(zeiger)
+            neu = None
+        else:
+            neu = self._knopf(pos)
+            self.setCursor(Qt.CursorShape.PointingHandCursor if neu
+                           else Qt.CursorShape.ArrowCursor)
+        if neu != self.hover:
+            self.hover = neu
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        resize, self._resize = self._resize, None
+        bewegt = getattr(self, "_bewegt", False)
+        self._zieh = None
+        self._presse = None
+        if resize or bewegt:
+            return
+        knopf = self._knopf(e.position())
+        a = self.app
+        if knopf == "close":
+            QApplication.instance().quit()
+        elif knopf == "next":
+            a.next_word()
+        elif knopf == "back":
+            a.go_back()
+        elif knopf == "lang":
+            a.toggle_start()
+        elif self.karte_rect().contains(e.position()):
+            a.flip()
+
+    def keyPressEvent(self, e):
+        a = self.app
+        taste = e.key()
+        if taste == Qt.Key.Key_D:
+            a.toggle_thema()
+        elif taste == Qt.Key.Key_U:
+            a.update_starten()
+        elif taste == Qt.Key.Key_M:
+            a.menu_umschalten()
+        elif taste == Qt.Key.Key_C:
+            a.bewerte("c")
+        elif taste == Qt.Key.Key_V:
+            a.bewerte("v")
+        elif taste == Qt.Key.Key_B:
+            a.bewerte("b")
+        elif taste == Qt.Key.Key_Left and a.einst["pfeiltasten"]:
+            a.go_back()
+        elif taste == Qt.Key.Key_Right and a.einst["pfeiltasten"]:
+            a.next_word()
+
+    def resizeEvent(self, _):
+        self._wrapcache.clear()
+
+
+# ---------------------------------------------------------------- Anwendung
 class Voci:
-    def __init__(self):
-        self.root = tk.Tk()
-        self.root.overrideredirect(True)          # kein Titel, kein Min/Max
-        self.root.attributes("-topmost", True)    # immer im Vordergrund
-        try:
-            self._icon = tk.PhotoImage(data=ICON_B64)   # Referenz festhalten
-            self.root.iconphoto(True, self._icon)
-        except Exception:
-            pass
-
-        # Alles in echten Bildschirmpixeln rechnen (DPI-Faktor unter Windows).
-        dpi = self.root.winfo_fpixels("1i")
-        self.k = max(1.0, dpi / 96.0)
-
-        self.w = int(380 * self.k)
-        self.h = int(230 * self.k)
-        self.min_w = int(260 * self.k)
-        self.min_h = int(150 * self.k)
-        self.pad = int(30 * self.k)               # Knopf-Abstand zur Ecke
-        self.br = int(15 * self.k)                # Knopfradius
-        self.edge = max(5, int(6 * self.k))       # Greifzone am Rand
-        self.corner = int(20 * self.k)            # Eckenradius der Karte
-        self.root.geometry("%dx%d+%d+%d" % (self.w, self.h, 140, 140))
-
-        self.void = self._setup_transparency()
-        try:
-            self.cnv = tk.Canvas(self.root, bd=0, highlightthickness=0, bg=self.void)
-        except tk.TclError:                       # Plattform mag den Farbnamen nicht
-            self.void = FALLBACK_VOID
-            self.cnv = tk.Canvas(self.root, bd=0, highlightthickness=0, bg=self.void)
-        self.cnv.pack(fill="both", expand=True)
-
-        familie = self._pick_font()
-        self.tiny_px = int(11 * self.k)
-        self.font_word = tkfont.Font(family=familie, size=-int(20 * self.k))
-        self.font_tiny = tkfont.Font(family=familie, size=-self.tiny_px)
-
-        # Zustand
+    def __init__(self, qapp):
+        self.qapp = qapp
         self.einst = lade_einstellungen()
         self.vocab = lade_vokabeln()
-        self.faktoren = lade_faktoren()          # fr-Text -> Faktor
+        self.faktoren = lade_faktoren()
         self.sets = [{"id": "etape1", "name": "Étape 1",
                       "indizes": list(range(len(self.vocab)))}]
         self.thema = self.einst["thema"]
@@ -533,194 +1322,47 @@ class Voci:
         self.flips = 0
         self.idx = None
         self.idx = self.ziehe_wort()
-        self.history = []            # [{"idx": ..., "delta": ...}], max. 10
-        self.undo_delta = None       # Wertung des aktuellen Worts (ersetzbar)
-        self.blitz = None            # Blitzfarbe nach c/v/b
-        self.menu = None             # Menüfenster
-        self.liste_fenster = None    # Wörterliste
-        self.scale = 1.0             # Flip-Animation
+        self.history = []
+        self.undo_delta = None
+        self.blitz = None
         self.animating = False
-        self.hover = None
-        self.auto_job = None
         self.countdown_frac = None
-        self.was_active = True
-        self.seen_focus = False      # hat die Plattform je Fokus gemeldet?
-        self.update_version = None   # gefundene neuere Version
-        self.update_status = None    # Text für den Hinweis auf der Karte
-        self.update_fertig = None    # (art, ziel, neu) - bereit zum Tausch
-        self._letzter_hinweis = (None, None)
-        self.imgcache = {}
-        self._wrapcache = {}
-
-        self._drag = None
-        self._resize = None
-        self.cnv.bind("<ButtonPress-1>", self.on_press)
-        self.cnv.bind("<B1-Motion>", self.on_move)
-        self.cnv.bind("<ButtonRelease-1>", self.on_release)
-        self.cnv.bind("<Motion>", self.on_hover)
-        self.root.bind("<Configure>", self.on_configure)
-        self.root.bind("<Key>", self.on_key)
-        if IS_WIN:
-            self._init_win_focus_poll()
-        else:
-            self.root.bind("<FocusIn>", self._on_focus_in)
-            self.root.bind("<FocusOut>", lambda e: self.set_active(False))
-
-        self.root.attributes("-topmost", bool(self.einst["immer_vorne"]))
-        self.root.lift()
-        self.draw()
-        self._starte_hintergrund()
-        self._ui_takt()
-        self.root.mainloop()
-
-    # ------------------------------------------------------------ Updates
-    def _starte_hintergrund(self):
-        """Netzarbeit läuft in Hintergrundfäden und darf nie etwas umwerfen -
-        sie setzt nur Werte, gezeichnet wird im UI-Takt."""
-        threading.Thread(target=self._pruefe_wortliste, daemon=True).start()
-        if VERSION != "dev" or TESTMODUS:
-            threading.Thread(target=self._pruefe_version, daemon=True).start()
-
-    def _pruefe_wortliste(self):
-        try:
-            vokabeln_auffrischen()
-        except Exception:
-            pass
-
-    def _pruefe_version(self):
-        try:
-            neu = neueste_version()
-        except Exception:
-            return
-        if neu and neu != VERSION:
-            self.update_version = neu
-
-    def _ui_takt(self):
-        """Einziger Ort, an dem Ergebnisse der Hintergrundfäden ins Bild
-        kommen - Tk verträgt keine Zugriffe aus fremden Fäden."""
-        if self.update_fertig:
-            self._tauschen()
-            return
-        stand = (self.update_version, self.update_status)
-        if stand != self._letzter_hinweis:
-            self._letzter_hinweis = stand
-            self.draw()
-        self.root.after(500, self._ui_takt)
-
-    def update_starten(self):
-        if not self.update_version or self.update_status:
-            return
-        self.update_status = "lädt"
-        threading.Thread(target=self._update_laden, daemon=True).start()
-
-    def _update_laden(self):
-        try:
-            art, ziel = installation()
-            arbeitsordner = tempfile.mkdtemp(prefix="voci-update-")
-            neu = update_vorbereiten(art, ziel, arbeitsordner)
-            self.update_fertig = (art, ziel, neu)
-        except Exception:
-            self.update_status = "fehlgeschlagen"
-
-    def _tauschen(self):
-        art, ziel, neu = self.update_fertig
+        self.auto_timer = None
+        self.war_aktiv = True
+        self.update_version = None
+        self.update_status = None
         self.update_fertig = None
+        self.menu = None
+        self.liste = None
+        self.liste_sortierung = "az"
+
+        self.karte = Karte(self)
+        self.karte.setWindowTitle("")
         try:
-            tausch_starten(ziel, neu, startbefehl_fuer(art, ziel))
-        except Exception:
-            self.update_status = "fehlgeschlagen"
-            self.root.after(500, self._ui_takt)
-            return
-        self.root.destroy()
-
-    # ------------------------------------------------------------ Plattform
-    def _setup_transparency(self):
-        """Runde Ecken: Windows blendet eine Schlüsselfarbe aus, macOS kann das
-        Fenster selbst transparent zeichnen, sonst bleibt ein grauer Rahmen."""
-        self.keyed = False
-        if IS_WIN:
-            try:
-                self.root.attributes("-transparentcolor", KEY)
-                self.keyed = True
-                return KEY
-            except tk.TclError:
-                return FALLBACK_VOID
-        if IS_MAC:
-            try:
-                self.root.attributes("-transparent", True)
-                self.root.configure(bg="systemTransparent")
-                return "systemTransparent"
-            except tk.TclError:
-                return FALLBACK_VOID
-        return FALLBACK_VOID
-
-    def _pick_font(self):
-        vorhanden = set(tkfont.families(self.root))
-        for name in FONT_WUNSCH:
-            if name in vorhanden:
-                return name
-        return tkfont.nametofont("TkDefaultFont").actual("family")
-
-    def _init_win_focus_poll(self):
-        self._u32 = ctypes.windll.user32
-        self.root.update_idletasks()
-        self._hwnds = set()
-        try:
-            child = self.root.winfo_id()
-            self._hwnds.add(child)
-            self._hwnds.add(self._u32.GetParent(child))
+            bild = QPixmap()
+            bild.loadFromData(base64.b64decode(ICON_B64))
+            qapp.setWindowIcon(QIcon(bild))
         except Exception:
             pass
-        self._poll_focus()
+        if not self.einst["immer_vorne"]:
+            self._topmost(False)
+        self.karte.show()
 
-    def _poll_focus(self):
-        try:
-            self.set_active(self._u32.GetForegroundWindow() in self._hwnds)
-        except Exception:
-            pass
-        self.root.after(POLL_MS, self._poll_focus)
+        qapp.applicationStateChanged.connect(self._app_zustand)
+        self._takt = QTimer()
+        self._takt.timeout.connect(self._ui_takt)
+        self._takt.start(500)
+        self._starte_hintergrund()
 
-    def _on_focus_in(self, _event):
-        self.seen_focus = True
-        self.set_active(True)
+    # ---- Fenster
+    def _topmost(self, an):
+        k = self.karte
+        sichtbar = k.isVisible()
+        k.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, an)
+        if sichtbar:
+            k.show()
 
-    def set_active(self, active):
-        if active and not self.was_active:
-            self.cancel_auto()
-        elif (not active and self.was_active and self.flips >= FLIPS_NEEDED
-              and self.einst["auto_weiter"]):
-            # Ohne verlässliche Fokusmeldungen lieber gar nicht automatisch
-            # weiterspringen, als ständig ungefragt weiterzuspringen.
-            if IS_WIN or self.seen_focus:
-                self.start_auto()
-        self.was_active = active
-
-    # ------------------------------------------------------------ Auto-Weiter
-    def start_auto(self):
-        self.cancel_auto(redraw=False)
-        self._auto_left = int(self.einst["auto_dauer"]) * 1000
-        self._tick_auto()
-
-    def _tick_auto(self):
-        if self._auto_left <= 0:
-            self.auto_job = None
-            self.countdown_frac = None
-            self.next_word()
-            return
-        self.countdown_frac = self._auto_left / (int(self.einst["auto_dauer"]) * 1000)
-        self.draw()
-        self._auto_left -= 100
-        self.auto_job = self.root.after(100, self._tick_auto)
-
-    def cancel_auto(self, redraw=True):
-        if self.auto_job is not None:
-            self.root.after_cancel(self.auto_job)
-            self.auto_job = None
-        self.countdown_frac = None
-        if redraw:
-            self.draw()
-
-    # ------------------------------------------------------------ Wortlogik
+    # ---- Wortlogik (identisch zur bisherigen Fassung)
     @property
     def word(self):
         return self.vocab[self.idx]
@@ -746,9 +1388,7 @@ class Voci:
         return indizes or self.sets[0]["indizes"]
 
     def ziehe_wort(self):
-        """Gewichtete Zufallswahl: der Faktor eines Worts ist sein Gewicht.
-        Faktor 0 kommt nie, Faktor über 1 entsprechend öfter. Im Modus
-        'schwere Wörter' zählen nur Einträge mit Faktor >= 1."""
+        """Gewichtete Zufallswahl: der Faktor eines Worts ist sein Gewicht."""
         kandidaten = [i for i in self.aktive_indizes() if i != self.idx]
         if not kandidaten:
             return self.idx if self.idx is not None else 0
@@ -762,7 +1402,6 @@ class Voci:
         return random.choices(kandidaten, weights=gewichte, k=1)[0]
 
     def remember(self, delta=None):
-        """Wort samt seiner (ersetzbaren) Wertung in die Historie legen."""
         self.history.append({"idx": self.idx, "delta": delta})
         if len(self.history) > HISTORY_MAX:
             self.history.pop(0)
@@ -770,9 +1409,7 @@ class Voci:
     def next_word(self):
         if self.animating or self.blitz:
             return
-        self.cancel_auto(redraw=False)
-        # Wer ohne neue Wertung weitergeht, behält die alte - sie bleibt
-        # über die Historie weiterhin ersetzbar.
+        self.cancel_auto()
         self.remember(self.undo_delta)
         self.undo_delta = None
         neu = self.ziehe_wort()
@@ -781,50 +1418,48 @@ class Voci:
             self.idx = neu
             self.flips = 0
             self.side = self.start_side
-        self.animate(commit)
+        self.karte.animiere(commit)
 
     def go_back(self):
-        """Ein Wort zurück, in der gerade sichtbaren Sprache. Die damals
-        abgegebene Wertung wird mitgenommen und kann mit c/v/b ersetzt werden."""
+        """Ein Wort zurück, in der gerade sichtbaren Sprache."""
         if not self.history or self.animating or self.blitz:
             return
-        self.cancel_auto(redraw=False)
+        self.cancel_auto()
         eintrag = self.history.pop()
         self.undo_delta = eintrag["delta"]
 
         def commit():
             self.idx = eintrag["idx"]
             self.flips = 0
-        self.animate(commit)
+        self.karte.animiere(commit)
 
-    def bewerte(self, taste):
-        """c/v/b: Faktor anpassen, Karte kurz aufleuchten lassen, weiter.
-        Nach einem Zurück ersetzt die neue Wertung die alte, statt sich zu
-        ihr zu addieren."""
+    def flip(self):
         if self.animating or self.blitz:
             return
-        self.cancel_auto(redraw=False)
+        self.cancel_auto()
+
+        def commit():
+            self.side = "de" if self.side == "fr" else "fr"
+            self.flips += 1
+        self.karte.animiere(commit)
+
+    def bewerte(self, taste):
+        """c/v/b: Faktor anpassen, Karte aufleuchten lassen, weiter. Nach
+        einem Zurück ersetzt die neue Wertung die alte."""
+        if self.animating or self.blitz:
+            return
+        self.cancel_auto()
         delta = WERTUNG_DELTA[taste]
         alter_anteil = self.undo_delta or 0.0
         self.setze_faktor(self.idx, self.faktor(self.idx) - alter_anteil + delta)
         self.undo_delta = delta
         self.blitz = WERTUNG_BLITZ[taste]
-        self.draw()
-        self.root.after(BLITZ_MS, self._blitz_ende)
+        self.karte.update()
+        QTimer.singleShot(BLITZ_MS, self._blitz_ende)
 
     def _blitz_ende(self):
         self.blitz = None
         self.next_word()
-
-    def flip(self):
-        if self.animating:
-            return
-        self.cancel_auto(redraw=False)
-
-        def commit():
-            self.side = "de" if self.side == "fr" else "fr"
-            self.flips += 1
-        self.animate(commit)
 
     def toggle_start(self):
         if self.animating:
@@ -836,210 +1471,112 @@ class Voci:
 
             def commit():
                 self.side = self.start_side
-            self.animate(commit)
+            self.karte.animiere(commit)
         else:
-            self.draw()
-
-    # ------------------------------------------------------------ Animation
-    def animate(self, commit):
-        if self.animating:
-            return
-        if not self.einst["flip_animation"]:
-            commit()
-            self.scale = 1.0
-            self.draw()
-            return
-        self.animating = True
-        steps = 7
-
-        def shrink(i=0):
-            if i <= steps:
-                self.scale = math.cos(i / steps * math.pi / 2)
-                self.draw()
-                self.root.after(14, lambda: shrink(i + 1))
-            else:
-                commit()
-                grow()
-
-        def grow(i=0):
-            if i <= steps:
-                self.scale = math.sin(i / steps * math.pi / 2)
-                self.draw()
-                self.root.after(14, lambda: grow(i + 1))
-            else:
-                self.scale = 1.0
-                self.animating = False
-                self.draw()
-        shrink()
-
-    # ------------------------------------------------------------ Darstellung
-    def farbe(self, name):
-        return THEMEN[self.thema][name]
+            self.karte.update()
 
     def toggle_thema(self):
-        """Hell/dunkel wechseln - die Knopfbilder sind pro Palette gerendert
-        und muessen deshalb neu erzeugt werden."""
         self.thema = "dunkel" if self.thema == "hell" else "hell"
         self.einst["thema"] = self.thema
         speichere_einstellungen(self.einst)
-        self.imgcache.clear()
+        self.karte.update()
         self.menu_neu_aufbauen()
-        self.draw()
 
-    def on_key(self, event):
-        taste = event.keysym.lower()
-        if taste == "d":
-            self.toggle_thema()
-        elif taste == "u":
-            self.update_starten()
-        elif taste == "m":
-            self.menu_umschalten()
-        elif taste in WERTUNG_DELTA:
-            self.bewerte(taste)
-        elif taste == "left" and self.einst["pfeiltasten"]:
-            self.go_back()
-        elif taste == "right" and self.einst["pfeiltasten"]:
+    def einstellung_kippen(self, name, schluessel):
+        self.einst[schluessel] = not self.einst[schluessel]
+        speichere_einstellungen(self.einst)
+        if schluessel == "immer_vorne":
+            self._topmost(self.einst[schluessel])
+
+    def schwere_kippen(self):
+        self.einst["schwere_modus"] = not self.einst["schwere_modus"]
+        speichere_einstellungen(self.einst)
+
+    # ---- Auto-Weiter
+    def _app_zustand(self, zustand):
+        self.set_active(zustand == Qt.ApplicationState.ApplicationActive)
+
+    def set_active(self, aktiv):
+        if aktiv and not self.war_aktiv:
+            self.cancel_auto()
+        elif (not aktiv and self.war_aktiv and self.flips >= FLIPS_NEEDED
+              and self.einst["auto_weiter"]):
+            self.start_auto()
+        self.war_aktiv = aktiv
+
+    def start_auto(self):
+        self.cancel_auto()
+        self._auto_rest = int(self.einst["auto_dauer"]) * 1000
+        self.auto_timer = QTimer()
+        self.auto_timer.timeout.connect(self._auto_tick)
+        self.auto_timer.start(100)
+
+    def _auto_tick(self):
+        self._auto_rest -= 100
+        if self._auto_rest <= 0:
+            self.cancel_auto()
             self.next_word()
-
-    # ------------------------------------------------------------ Layout
-    def buttons(self):
-        p, r = self.pad, self.br
-        return (("lang", p, p, r),
-                ("close", self.w - p, p, r),
-                ("back", p, self.h - p, r),
-                ("next", self.w - p, self.h - p, r))
-
-    def button_image(self, tag, hot):
-        key = (tag, hot, self.br, self.thema)
-        img = self.imgcache.get(key)
-        if img is None:
-            size = self.br * 2 + 4
-            if tag == "close" and hot:
-                flaeche, symbol = MAC_ROT, MAC_ROT_SYMBOL
-            else:
-                flaeche = self.farbe("hover") if hot else self.farbe("bg")
-                symbol = self.farbe("fg")
-            img = render_button(size, self.br, flaeche,
-                                icon_segs(tag, self.br),
-                                max(1.5, 1.7 * self.k),
-                                symbol, self.farbe("bg"))
-            self.imgcache[key] = img
-        return img
-
-    # ------------------------------------------------------------ Zeichnen
-    def draw(self):
-        c, w, h = self.cnv, self.w, self.h
-        c.delete("all")
-        cx = w / 2.0
-        half = max(2.0, (w / 2.0 - 3) * max(self.scale, 0.02))
-
-        flaeche = self.blitz or self.farbe("bg")
-        rounded_rect(c, cx - half, 3, cx + half, h - 3, self.corner,
-                     fill=hexc(flaeche),
-                     outline=self.farbe("rand"), width=1)
-
-        if self.scale <= 0.12:
             return
+        self.countdown_frac = self._auto_rest / (int(self.einst["auto_dauer"]) * 1000)
+        self.karte.update()
 
-        def sx(x):                       # x-Position mitflippen lassen
-            return cx + (x - cx) * self.scale
+    def cancel_auto(self):
+        if self.auto_timer:
+            self.auto_timer.stop()
+            self.auto_timer = None
+        self.countdown_frac = None
+        self.karte.update()
 
-        # Der Text staucht mit der Karte mit; die Zeilen stehen dabei fest.
-        lines, full = self.wrapped(self.word[self.side])
-        self.font_word.configure(size=-max(1, int(round(full * self.scale))))
-        c.create_text(cx, h / 2.0, text=lines, font=self.font_word,
-                      fill=hexc(self.farbe("fg")), justify="center")
+    # ---- Menü / Liste
+    def menu_umschalten(self):
+        if self.menu and self.menu.isVisible():
+            self.menu.close()
+            self.menu = None
+            return
+        self.menu = MenuFenster(self)
+        self.menu.show()
 
-        rest = self.scale > 0.999 and not self.blitz
-        for tag, bx, by, r in self.buttons():
-            if tag == "back" and not self.history:
-                continue
-            x = sx(bx)
-            if rest:
-                c.create_image(x, by, image=self.button_image(tag, self.hover == tag))
-            else:
-                if self.hover == tag:
-                    c.create_oval(x - r * self.scale, by - r, x + r * self.scale, by + r,
-                                  fill=hexc(self.farbe("hover")), width=0)
-                lw = max(1.5, 1.7 * self.k)
-                for (x1, y1, x2, y2) in icon_segs(tag, r):
-                    c.create_line(x + x1 * self.scale, by + y1,
-                                  x + x2 * self.scale, by + y2,
-                                  fill=hexc(self.farbe("fg")), width=lw,
-                                  capstyle="round")
-            if tag == "lang":
-                self.font_tiny.configure(
-                    size=-max(1, int(round(self.tiny_px * self.scale))))
-                c.create_text(x, by, text=self.start_side.upper(),
-                              font=self.font_tiny,
-                              fill=hexc(self.farbe("zweit")))
+    def menu_neu_aufbauen(self):
+        if self.menu and self.menu.isVisible():
+            tab = self.menu.tab
+            pos = self.menu.pos()
+            self.menu.close()
+            self.menu = MenuFenster(self, tab)
+            self.menu.move(pos)
+            self.menu.show()
+        if self.liste and self.liste.isVisible():
+            pos = self.liste.pos()
+            self.liste.close()
+            self.liste = ListeFenster(self)
+            self.liste.move(pos)
+            self.liste.show()
 
-        hinweis = self.update_hinweis()
-        if hinweis and rest and not self.countdown_frac:
-            self.font_tiny.configure(size=-self.tiny_px)
-            c.create_text(cx, h - 14 * self.k, text=hinweis,
-                          font=self.font_tiny, fill=hexc(self.farbe("zweit")))
+    def liste_zeigen(self):
+        if self.liste and self.liste.isVisible():
+            self.liste.raise_()
+            return
+        self.liste = ListeFenster(self)
+        self.liste.show()
 
-        if self.countdown_frac and rest:
-            bw = (w - 2 * (self.pad + self.br + 12 * self.k)) * self.countdown_frac
-            hoehe = max(3.0, 4 * self.k)
-            if bw > hoehe:
-                y = h - 12 * self.k
-                rounded_rect(c, cx - bw / 2, y, cx + bw / 2, y + hoehe,
-                             hoehe / 2, fill=self.farbe("timer"), width=0)
+    # ---- Updates (Netz in Fäden, UI im Takt)
+    def _starte_hintergrund(self):
+        threading.Thread(target=self._pruefe_wortliste, daemon=True).start()
+        if VERSION != "dev" or TESTMODUS:
+            threading.Thread(target=self._pruefe_version, daemon=True).start()
 
-    def wrapped(self, text):
-        """Zeilenumbruch einmal bei voller Kartenbreite bestimmen und merken.
-        Während des Flips bleiben die Zeilen dann stehen – es skaliert nur die
-        Schrift, statt dass der Text bei jedem Frame neu umbricht."""
-        size = self.word_size(text)
-        width = max(40, self.w - 78 * self.k)
-        key = (text, size, int(width))
-        cached = self._wrapcache.get(key)
-        if cached is not None:
-            return cached, size
-        self.font_word.configure(size=-size)
-        measure = self.font_word.measure
-        lines, cur = [], ""
-        for token in text.split(" "):
-            for part in self._split_long(token, width, measure):
-                probe = part if not cur else cur + " " + part
-                if cur and measure(probe) > width:
-                    lines.append(cur)
-                    cur = part
-                else:
-                    cur = probe
-        if cur:
-            lines.append(cur)
-        out = "\n".join(lines)
-        self._wrapcache[key] = out
-        return out, size
+    def _pruefe_wortliste(self):
+        try:
+            vokabeln_auffrischen()
+        except Exception:
+            pass
 
-    @staticmethod
-    def _split_long(token, width, measure):
-        """Überlange Einzelwörter zerlegen – erst am Bindestrich, sonst hart."""
-        if measure(token) <= width:
-            return [token]
-        parts, cur = [], ""
-        for piece in token.replace("-", "-\x00").split("\x00"):
-            if cur and measure(cur + piece) > width:
-                parts.append(cur)
-                cur = piece
-            else:
-                cur += piece
-        if cur:
-            parts.append(cur)
-        out = []
-        for part in parts:
-            while measure(part) > width and len(part) > 1:
-                n = len(part)
-                while n > 1 and measure(part[:n]) > width:
-                    n -= 1
-                out.append(part[:n])
-                part = part[n:]
-            if part:
-                out.append(part)
-        return out
+    def _pruefe_version(self):
+        try:
+            neu = neueste_version()
+        except Exception:
+            return
+        if neu and neu != VERSION:
+            self.update_version = neu
 
     def update_hinweis(self):
         if self.update_status == "lädt":
@@ -1050,615 +1587,48 @@ class Voci:
             return "Update verfügbar · Taste u"
         return None
 
-    def word_size(self, text):
-        """Schriftgrösse in Pixeln – plattformunabhängig, weil negative
-        Tk-Grössen Pixel statt Punkte bedeuten."""
-        base = min(self.w / 19.0, self.h / 11.5)
-        n = len(text)
-        if n > 70:
-            base *= 0.60
-        elif n > 45:
-            base *= 0.74
-        elif n > 28:
-            base *= 0.87
-        return max(8, int(base))
-
-    # ------------------------------------------------------------ Menü
-    def menu_umschalten(self):
-        if self.menu and self.menu.winfo_exists():
-            self.menu.destroy()
-            self.menu = None
+    def _ui_takt(self):
+        if self.update_fertig:
+            self._tauschen()
             return
-        self._menu_bauen("einstellungen")
+        self.karte.update()
 
-    def menu_neu_aufbauen(self):
-        """Nach einem Themawechsel mit den neuen Farben neu aufbauen."""
-        if self.menu and self.menu.winfo_exists():
-            tab = getattr(self, "_menu_tab", "einstellungen")
-            self.menu.destroy()
-            self._menu_bauen(tab)
-        if self.liste_fenster and self.liste_fenster.winfo_exists():
-            self.liste_fenster.destroy()
-            self.liste_zeigen()
-
-    def _menu_fonts(self):
-        familie = self.font_word.actual("family")
-        self.font_menu = tkfont.Font(family=familie, size=-int(13 * self.k))
-        self.font_menu_fett = tkfont.Font(family=familie, size=-int(13 * self.k),
-                                          weight="bold")
-        self.font_menu_titel = tkfont.Font(family=familie, size=-int(15 * self.k),
-                                           weight="bold")
-        self.font_menu_klein = tkfont.Font(family=familie, size=-int(11 * self.k))
-
-    def _rundes_fenster(self, breite, hoehe):
-        """Randloses Zusatzfenster im Kartenstil, mit runden Ecken wo möglich."""
-        f = tk.Toplevel(self.root)
-        f.overrideredirect(True)
-        f.attributes("-topmost", True)
-        leer = FALLBACK_VOID
-        if self.keyed:
-            try:
-                f.attributes("-transparentcolor", KEY)
-                leer = KEY
-            except tk.TclError:
-                pass
-        elif IS_MAC:
-            try:
-                f.attributes("-transparent", True)
-                f.configure(bg="systemTransparent")
-                leer = "systemTransparent"
-            except tk.TclError:
-                pass
-        cnv = tk.Canvas(f, bd=0, highlightthickness=0, bg=leer,
-                        width=breite, height=hoehe)
-        cnv.pack(fill="both", expand=True)
-        x = self.root.winfo_x() + self.w + 12
-        y = self.root.winfo_y()
-        if x + breite > f.winfo_screenwidth():
-            x = max(0, self.root.winfo_x() - breite - 12)
-        f.geometry("%dx%d+%d+%d" % (breite, hoehe, x, y))
-        return f, cnv
-
-    def _panel_grund(self, cnv, breite, hoehe, titel, schliessen):
-        """Kartenfläche, Titelzeile und X; liefert die Starthöhe des Inhalts."""
-        rounded_rect(cnv, 1, 1, breite - 1, hoehe - 1, self.corner,
-                     fill=hexc(self.farbe("bg")),
-                     outline=self.farbe("rand"), width=1)
-        cnv.create_text(int(18 * self.k), int(22 * self.k), text=titel,
-                        anchor="w", font=self.font_menu_titel,
-                        fill=hexc(self.farbe("fg")))
-        r = int(10 * self.k)
-        bx = breite - int(22 * self.k)
-        by = int(22 * self.k)
-        cnv.create_oval(bx - r, by - r, bx + r, by + r, width=0,
-                        fill=hexc(self.farbe("bg")), tags="xknopf")
-        a = r * 0.42
-        for (x1, y1, x2, y2) in (((-a), (-a), a, a), ((-a), a, a, (-a))):
-            cnv.create_line(bx + x1, by + y1, bx + x2, by + y2,
-                            fill=hexc(self.farbe("zweit")),
-                            width=max(1.4, 1.5 * self.k), capstyle="round",
-                            tags="xknopf")
-        self._region(cnv, bx - r - 4, by - r - 4, bx + r + 4, by + r + 4,
-                     schliessen, "close")
-        return int(44 * self.k)
-
-    def _region(self, cnv, x1, y1, x2, y2, cb, name=""):
-        cnv._regionen.append((x1, y1, x2, y2, cb, name))
-
-    def _region_klick(self, cnv, event):
-        x = cnv.canvasx(event.x)
-        y = cnv.canvasy(event.y)
-        for x1, y1, x2, y2, cb, _ in reversed(cnv._regionen):
-            if x1 <= x <= x2 and y1 <= y <= y2:
-                cb()
-                return True
-        return False
-
-    def _region_ausloesen(self, cnv, name):
-        """Für Tests: benannte Region direkt auslösen."""
-        for x1, y1, x2, y2, cb, n in cnv._regionen:
-            if n == name:
-                cb()
-                return True
-        return False
-
-    def _schalter(self, cnv, x, y, an):
-        """Apple-Kippschalter: grüne Pille mit weissem Knauf."""
-        b, h = int(36 * self.k), int(21 * self.k)
-        farbe = self.farbe("gruen") if an else self.farbe("grau")
-        rounded_rect(cnv, x - b, y - h / 2, x, y + h / 2, h / 2,
-                     fill=hexc(farbe), width=0)
-        r = h / 2 - 2
-        kx = x - r - 2 if an else x - b + r + 2
-        cnv.create_oval(kx - r, y - r, kx + r, y + r,
-                        fill="#ffffff", outline="#00000022" if False else "",
-                        width=0)
-
-    def _segmente(self, cnv, x_rechts, y, optionen, aktiv, cb_name, cb):
-        """Segmentregler: Pillenhintergrund, aktives Segment als weisse Karte."""
-        h = int(22 * self.k)
-        pad = int(10 * self.k)
-        breiten = [self.font_menu_klein.measure(text) + 2 * pad
-                   for _, text in optionen]
-        gesamt = sum(breiten)
-        x0 = x_rechts - gesamt
-        rounded_rect(cnv, x0, y - h / 2, x_rechts, y + h / 2, h / 2,
-                     fill=hexc(self.farbe("gruppe")), width=0)
-        lauf = x0
-        for (wert, text), bw in zip(optionen, breiten):
-            if wert == aktiv:
-                rounded_rect(cnv, lauf + 2, y - h / 2 + 2,
-                             lauf + bw - 2, y + h / 2 - 2, h / 2 - 2,
-                             fill=hexc(self.farbe("bg")),
-                             outline=self.farbe("rand"), width=1)
-            cnv.create_text(lauf + bw / 2, y, text=text,
-                            font=(self.font_menu_fett if wert == aktiv
-                                  else self.font_menu_klein),
-                            fill=hexc(self.farbe("fg")))
-            self._region(cnv, lauf, y - h / 2, lauf + bw, y + h / 2,
-                         lambda w=wert: cb(w), "%s-%s" % (cb_name, wert))
-            lauf += bw
-
-    def _gruppe(self, cnv, x1, y, breite, zeilen, zeichner):
-        """Abgerundete Gruppenfläche mit Haarlinien zwischen den Zeilen."""
-        zh = int(34 * self.k)
-        hoehe = zh * len(zeilen)
-        rounded_rect(cnv, x1, y, x1 + breite, y + hoehe, int(10 * self.k),
-                     fill=hexc(self.farbe("gruppe")), width=0)
-        for n, zeile in enumerate(zeilen):
-            zy = y + zh * n + zh / 2
-            if n:
-                cnv.create_line(x1 + int(14 * self.k), y + zh * n,
-                                x1 + breite - int(2 * self.k), y + zh * n,
-                                fill=self.farbe("rand"))
-            zeichner(zeile, x1, zy, breite)
-        return y + hoehe
-
-    def _menu_bauen(self, tab):
-        self._menu_tab = tab
-        self._menu_fonts()
-        breite = int(320 * self.k)
-        hoehe = int(392 * self.k)
-        m, cnv = self._rundes_fenster(breite, hoehe)
-        self.menu = m
-        self.menu_cnv = cnv
-        cnv._regionen = []
-
-        def zu():
-            m.destroy()
-            self.menu = None
-        cnv.bind("<Button-1>", lambda e: self._menu_klick(e))
-        m.bind("<Key>", lambda e: (zu() if e.keysym.lower() in ("m", "escape")
-                                   else None))
-        self._menu_zeichnen()
-
-    def _panel_klick(self, fenster, cnv, event):
-        if self._region_klick(cnv, event):
+    def update_starten(self):
+        if not self.update_version or self.update_status:
             return
-        # freie Fläche zieht das Fenster
-        start = (event.x_root, event.y_root, fenster.winfo_x(), fenster.winfo_y())
-        def zieh(e):
-            fenster.geometry("+%d+%d" % (start[2] + e.x_root - start[0],
-                                         start[3] + e.y_root - start[1]))
-        cnv.bind("<B1-Motion>", zieh)
-        cnv.bind("<ButtonRelease-1>",
-                 lambda e: (cnv.unbind("<B1-Motion>"),
-                            cnv.unbind("<ButtonRelease-1>")))
+        self.update_status = "lädt"
+        threading.Thread(target=self._update_laden, daemon=True).start()
 
-    def _menu_klick(self, event):
-        self._panel_klick(self.menu, self.menu_cnv, event)
-
-    def _menu_zeichnen(self):
-        cnv = self.menu_cnv
-        cnv.delete("all")
-        cnv._regionen = []
-        breite = int(320 * self.k)
-        hoehe = int(392 * self.k)
-        rand = int(16 * self.k)
-        innen = breite - 2 * rand
-
-        def zu():
-            self.menu.destroy()
-            self.menu = None
-        y = self._panel_grund(cnv, breite, hoehe, "Voci", zu)
-
-        # Tab-Umschalter als Segmentregler über die volle Breite
-        h = int(26 * self.k)
-        mitte_y = y + h / 2
-        rounded_rect(cnv, rand, y, rand + innen, y + h, h / 2,
-                     fill=hexc(self.farbe("gruppe")), width=0)
-        haelfte = innen / 2
-        for n, (wert, text) in enumerate((("einstellungen", "Einstellungen"),
-                                          ("sets", "Voci-Sets"))):
-            x0 = rand + haelfte * n
-            if wert == self._menu_tab:
-                rounded_rect(cnv, x0 + 2, y + 2, x0 + haelfte - 2, y + h - 2,
-                             h / 2 - 2, fill=hexc(self.farbe("bg")),
-                             outline=self.farbe("rand"), width=1)
-            cnv.create_text(x0 + haelfte / 2, mitte_y, text=text,
-                            font=(self.font_menu_fett if wert == self._menu_tab
-                                  else self.font_menu),
-                            fill=hexc(self.farbe("fg")))
-            self._region(cnv, x0, y, x0 + haelfte, y + h,
-                         lambda w=wert: self._tab_wechseln(w), "tab-" + wert)
-        y += h + int(14 * self.k)
-
-        if self._menu_tab == "einstellungen":
-            self._tab_einstellungen(cnv, rand, y, innen)
-        else:
-            self._tab_sets(cnv, rand, y, innen)
-
-    def _tab_wechseln(self, tab):
-        self._menu_tab = tab
-        self._menu_zeichnen()
-
-    def _einstellung_kippen(self, schluessel, wirkung=None):
-        self.einst[schluessel] = not self.einst[schluessel]
-        speichere_einstellungen(self.einst)
-        if wirkung:
-            wirkung(self.einst[schluessel])
-        self._menu_zeichnen()
-
-    def _tab_einstellungen(self, cnv, x, y, innen):
-        tx = x + int(14 * self.k)
-
-        def schalterzeile(text, wert, cb, name):
-            def zeichne(_, gx, gy, gb):
-                cnv.create_text(tx, gy, text=text, anchor="w",
-                                font=self.font_menu, fill=hexc(self.farbe("fg")))
-                self._schalter(cnv, gx + gb - int(12 * self.k), gy, wert)
-                self._region(cnv, gx, gy - 17 * self.k, gx + gb, gy + 17 * self.k,
-                             cb, name)
-            return zeichne
-
-        zeilen1 = [
-            schalterzeile("Dark Mode", self.thema == "dunkel",
-                          self.toggle_thema, "dark"),
-            schalterzeile("Immer im Vordergrund", self.einst["immer_vorne"],
-                          lambda: self._einstellung_kippen(
-                              "immer_vorne",
-                              lambda an: self.root.attributes("-topmost", bool(an))),
-                          "vorne"),
-            schalterzeile("Pfeiltasten-Navigation", self.einst["pfeiltasten"],
-                          lambda: self._einstellung_kippen("pfeiltasten"),
-                          "pfeile"),
-            schalterzeile("Flip-Animation", self.einst["flip_animation"],
-                          lambda: self._einstellung_kippen("flip_animation"),
-                          "flip"),
-        ]
-        y = self._gruppe(cnv, x, y, innen, zeilen1,
-                         lambda z, gx, gy, gb: z(z, gx, gy, gb)) + int(12 * self.k)
-
-        def auto_zeile(_, gx, gy, gb):
-            cnv.create_text(tx, gy, text="Auto-Weiter", anchor="w",
-                            font=self.font_menu, fill=hexc(self.farbe("fg")))
-            self._schalter(cnv, gx + gb - int(12 * self.k), gy,
-                           self.einst["auto_weiter"])
-            self._region(cnv, gx, gy - 17 * self.k, gx + gb, gy + 17 * self.k,
-                         lambda: self._einstellung_kippen("auto_weiter"), "auto")
-
-        def dauer_zeile(_, gx, gy, gb):
-            cnv.create_text(tx, gy, text="Wartezeit", anchor="w",
-                            font=self.font_menu, fill=hexc(self.farbe("fg")))
-            def setze(w):
-                self.einst["auto_dauer"] = w
-                speichere_einstellungen(self.einst)
-                self._menu_zeichnen()
-            self._segmente(cnv, gx + gb - int(12 * self.k), gy,
-                           [(3, "3 s"), (5, "5 s"), (10, "10 s")],
-                           int(self.einst["auto_dauer"]), "dauer", setze)
-
-        def sprache_zeile(_, gx, gy, gb):
-            cnv.create_text(tx, gy, text="Startsprache", anchor="w",
-                            font=self.font_menu, fill=hexc(self.farbe("fg")))
-            def setze(w):
-                if w != self.start_side:
-                    self.toggle_start()
-                self._menu_zeichnen()
-            self._segmente(cnv, gx + gb - int(12 * self.k), gy,
-                           [("fr", "FR"), ("de", "DE")],
-                           self.start_side, "sprache", setze)
-
-        y = self._gruppe(cnv, x, y, innen, [auto_zeile, dauer_zeile, sprache_zeile],
-                         lambda z, gx, gy, gb: z(z, gx, gy, gb)) + int(14 * self.k)
-
-        cnv.create_text(x + innen / 2, y + int(6 * self.k),
-                        text="Bewerten:  c kann ich nicht  ·  v neutral  ·  b kann ich",
-                        font=self.font_menu_klein,
-                        fill=hexc(self.farbe("zweit")))
-
-    def _tab_sets(self, cnv, x, y, innen):
-        tx = x + int(14 * self.k)
-
-        def set_zeile(satz, gx, gy, gb):
-            aktiv = satz["id"] in self.einst["sets"]
-            # Haken-Kreis in Systemblau
-            r = int(9 * self.k)
-            hx = tx + r
-            if aktiv:
-                cnv.create_oval(hx - r, gy - r, hx + r, gy + r, width=0,
-                                fill=hexc(self.farbe("akzent")))
-                w = max(1.5, 1.7 * self.k)
-                cnv.create_line(hx - r * 0.45, gy + r * 0.05,
-                                hx - r * 0.1, gy + r * 0.42,
-                                hx + r * 0.5, gy - r * 0.38,
-                                fill="#ffffff", width=w, capstyle="round",
-                                joinstyle="round")
-            else:
-                cnv.create_oval(hx - r, gy - r, hx + r, gy + r,
-                                outline=hexc(self.farbe("grau")), width=2)
-            cnv.create_text(hx + r + int(10 * self.k), gy, anchor="w",
-                            text=satz["name"], font=self.font_menu,
-                            fill=hexc(self.farbe("fg")))
-            cnv.create_text(hx + r + int(10 * self.k) + self.font_menu.measure(
-                                satz["name"]) + int(8 * self.k), gy, anchor="w",
-                            text="%d Wörter" % len(satz["indizes"]),
-                            font=self.font_menu_klein,
-                            fill=hexc(self.farbe("zweit")))
-            def kippen(sid=satz["id"]):
-                gewaehlt = set(self.einst["sets"])
-                if sid in gewaehlt:
-                    gewaehlt.discard(sid)
-                if not gewaehlt or satz["id"] not in self.einst["sets"]:
-                    gewaehlt.add(sid)
-                self.einst["sets"] = sorted(gewaehlt)
-                speichere_einstellungen(self.einst)
-                self._menu_zeichnen()
-            self._region(cnv, gx, gy - 17 * self.k, gx + gb - int(40 * self.k),
-                         gy + 17 * self.k, kippen, "set-" + satz["id"])
-            px = gx + gb - int(22 * self.k)
-            cnv.create_text(px, gy, text="⋯", font=self.font_menu_fett,
-                            fill=hexc(self.farbe("zweit")))
-            self._region(cnv, px - 14, gy - 14, px + 14, gy + 14,
-                         lambda: self._set_optionen(px, gy), "punkte")
-
-        self._gruppe(cnv, x, y, innen, self.sets,
-                     lambda z, gx, gy, gb: set_zeile(z, gx, gy, gb))
-
-    def _set_optionen(self, px, py):
-        popup = tk.Menu(self.menu, tearoff=0,
-                        bg=hexc(self.farbe("bg")), fg=hexc(self.farbe("fg")),
-                        activebackground=hexc(self.farbe("hover")),
-                        activeforeground=hexc(self.farbe("fg")),
-                        font=self.font_menu, relief="flat", bd=1)
-        schwer = tk.BooleanVar(master=self.menu,
-                               value=self.einst["schwere_modus"])
-        def schwer_um():
-            self.einst["schwere_modus"] = not self.einst["schwere_modus"]
-            speichere_einstellungen(self.einst)
-        popup.add_checkbutton(label="Schwere Wörter üben (Faktor ≥ 1)",
-                              variable=schwer, command=schwer_um)
-        popup.add_command(label="Wörterliste anzeigen", command=self.liste_zeigen)
-        popup.tk_popup(self.menu.winfo_rootx() + int(px),
-                       self.menu.winfo_rooty() + int(py))
-
-    # ------------------------------------------------------------ Wörterliste
-    def liste_zeigen(self):
-        if self.liste_fenster and self.liste_fenster.winfo_exists():
-            self.liste_fenster.lift()
-            return
-        self._menu_fonts()
-        self.liste_sortierung = getattr(self, "liste_sortierung", "az")
-        breite = int(360 * self.k)
-        hoehe = int(430 * self.k)
-        f, cnv = self._rundes_fenster(breite, hoehe)
-        self.liste_fenster = f
-        cnv._regionen = []
-        self.liste_aussen = cnv
-
-        def zu():
-            f.destroy()
-            self.liste_fenster = None
-        y = self._panel_grund(cnv, breite, hoehe, "Wörterliste", zu)
-        cnv.bind("<Button-1>", lambda e: self._panel_klick(f, cnv, e))
-        f.bind("<Key>", lambda e: zu() if e.keysym == "Escape" else None)
-
-        rand = int(16 * self.k)
-        innen = breite - 2 * rand
-
-        def sortiere(w):
-            self.liste_sortierung = w
-            zu()
-            self.liste_zeigen()
-        self._segmente(cnv, rand + int(150 * self.k), y + int(11 * self.k),
-                       [("az", "A–Z"), ("wertung", "Wertung")],
-                       self.liste_sortierung, "sortier", sortiere)
-        # Zurücksetzen als roter Textknopf (Apple-Stil für Löschendes)
-        rx = breite - rand
-        cnv.create_text(rx, y + int(11 * self.k), text="Alle zurücksetzen",
-                        anchor="e", font=self.font_menu_klein,
-                        fill=hexc((255, 105, 97)))
-        tb = self.font_menu_klein.measure("Alle zurücksetzen")
-        self._region(cnv, rx - tb, y, rx, y + int(22 * self.k),
-                     self._liste_alles_zuruecksetzen, "reset-alle")
-        y += int(30 * self.k)
-
-        # Innenliste: eigener Canvas im Panel, rollt mit dem Mausrad
-        rumpf_hoehe = hoehe - y - int(14 * self.k)
-        rows = tk.Canvas(f, bd=0, highlightthickness=0,
-                         bg=hexc(self.farbe("bg")),
-                         width=innen, height=rumpf_hoehe)
-        cnv.create_window(rand, y, anchor="nw", window=rows)
-        self.liste_canvas = rows
-        rows.bind("<Button-1>", self._liste_klick)
-        for ziel in (rows, cnv):
-            ziel.bind("<MouseWheel>", lambda e: rows.yview_scroll(
-                -1 if e.delta > 0 else 1, "units"))
-            ziel.bind("<Button-4>", lambda e: rows.yview_scroll(-1, "units"))
-            ziel.bind("<Button-5>", lambda e: rows.yview_scroll(1, "units"))
-        self.liste_breite = innen
-        self._liste_fuellen()
-
-    def _liste_sortieren(self, wie):
-        self.liste_sortierung = wie
-        f = self.liste_fenster
-        if f and f.winfo_exists():
-            f.destroy()
-            self.liste_fenster = None
-        self.liste_zeigen()
-
-    def _liste_reihenfolge(self):
-        indizes = list(self.aktive_indizes())
-        if self.liste_sortierung == "wertung":
-            indizes.sort(key=lambda i: (-wertung_prozent(self.faktor(i)),
-                                        self.vocab[i]["fr"].lower()))
-        else:
-            indizes.sort(key=lambda i: self.vocab[i]["fr"].lower())
-        return indizes
-
-    def _liste_fuellen(self):
-        cnv = self.liste_canvas
-        cnv.delete("all")
-        zh = int(30 * self.k)
-        breite = self.liste_breite
-        self.liste_zeilen = self._liste_reihenfolge()
-        for reihe, i in enumerate(self.liste_zeilen):
-            y = reihe * zh
-            mitte = y + zh / 2
-            prozent = wertung_prozent(self.faktor(i))
-            r = int(4.5 * self.k)
-            mx = breite - int(78 * self.k)
-            if reihe:
-                cnv.create_line(0, y, breite, y, fill=self.farbe("rand"))
-            text = "%s – %s" % (self.vocab[i]["fr"], self.vocab[i]["de"])
-            frei = mx - r - int(12 * self.k)
-            if self.font_menu.measure(text) > frei:
-                while text and self.font_menu.measure(text + "…") > frei:
-                    text = text[:-1]
-                text += "…"
-            cnv.create_text(int(2 * self.k), mitte, text=text, anchor="w",
-                            font=self.font_menu, fill=hexc(self.farbe("fg")))
-            cnv.create_oval(mx - r, mitte - r, mx + r, mitte + r,
-                            fill=hexc(wertung_farbe(prozent)), width=0)
-            cnv.create_text(mx + int(12 * self.k), mitte, text="%d%%" % prozent,
-                            anchor="w", font=self.font_menu_klein,
-                            fill=hexc(self.farbe("zweit")))
-            cnv.create_text(breite - int(6 * self.k), mitte, text="↺",
-                            anchor="e", font=self.font_menu,
-                            fill=hexc(self.farbe("zweit")),
-                            tags=("reset", "reset-%d" % i))
-        cnv.configure(scrollregion=(0, 0, breite, len(self.liste_zeilen) * zh))
-
-    def _liste_klick(self, event):
-        cnv = self.liste_canvas
-        x = cnv.canvasx(event.x)
-        y = cnv.canvasy(event.y)
-        for element in cnv.find_overlapping(x - 8, y - 8, x + 8, y + 8):
-            for tag in cnv.gettags(element):
-                if tag.startswith("reset-"):
-                    self.setze_faktor(int(tag.split("-")[1]), 1.0)
-                    self._liste_fuellen()
-                    return
-
-    def _liste_alles_zuruecksetzen(self):
-        self.faktoren.clear()
-        speichere_faktoren(self.faktoren)
-        self._liste_fuellen()
-
-    # ------------------------------------------------------------ Maus
-    def hit_button(self, x, y):
-        for tag, bx, by, r in self.buttons():
-            if tag == "back" and not self.history:
-                continue
-            if (x - bx) ** 2 + (y - by) ** 2 <= (r + 2) ** 2:
-                return tag
-        return None
-
-    def hit_edge(self, x, y):
-        e = self.edge
-        side = ""
-        if y <= e:
-            side += "n"
-        elif y >= self.h - e:
-            side += "s"
-        if x <= e:
-            side += "w"
-        elif x >= self.w - e:
-            side += "e"
-        return side or None
-
-    def set_cursor(self, name):
+    def _update_laden(self):
         try:
-            self.cnv.configure(cursor=name)
-        except tk.TclError:
-            self.cnv.configure(cursor="")
+            art, ziel = installation()
+            arbeitsordner = tempfile.mkdtemp(prefix="voci-update-")
+            neu = update_vorbereiten(art, ziel, arbeitsordner)
+            self.update_fertig = (art, ziel, neu)
+        except Exception:
+            self.update_status = "fehlgeschlagen"
 
-    def on_hover(self, e):
-        edge = self.hit_edge(e.x, e.y)
-        tag = None if edge else self.hit_button(e.x, e.y)
-        if edge:
-            self.set_cursor(CURSOR_EDGE.get(edge, ""))
-        else:
-            self.set_cursor(CURSOR_HAND if tag else "")
-        if tag != self.hover:
-            self.hover = tag
-            self.draw()
-
-    def on_press(self, e):
-        self.set_active(True)
+    def _tauschen(self):
+        art, ziel, neu = self.update_fertig
+        self.update_fertig = None
         try:
-            self.root.focus_force()      # sonst kommen keine Tastendruecke an
-        except tk.TclError:
-            pass
-        edge = self.hit_edge(e.x, e.y)
-        if edge:
-            self._resize = (edge, e.x_root, e.y_root, self.root.winfo_x(),
-                            self.root.winfo_y(), self.w, self.h)
+            tausch_starten(ziel, neu, startbefehl_fuer(art, ziel))
+        except Exception:
+            self.update_status = "fehlgeschlagen"
             return
-        self._drag = (e.x_root, e.y_root, self.root.winfo_x(),
-                      self.root.winfo_y(), False)
+        self.qapp.quit()
 
-    def on_move(self, e):
-        if self._resize:
-            edge, sx, sy, wx, wy, w0, h0 = self._resize
-            dx, dy = e.x_root - sx, e.y_root - sy
-            nw, nh, nx, ny = w0, h0, wx, wy
-            if "e" in edge:
-                nw = max(self.min_w, w0 + dx)
-            if "s" in edge:
-                nh = max(self.min_h, h0 + dy)
-            if "w" in edge:
-                nw = max(self.min_w, w0 - dx)
-                nx = wx + (w0 - nw)
-            if "n" in edge:
-                nh = max(self.min_h, h0 - dy)
-                ny = wy + (h0 - nh)
-            self.root.geometry("%dx%d+%d+%d" % (nw, nh, nx, ny))
-            return
-        if not self._drag:
-            return
-        sx, sy, wx, wy, moved = self._drag
-        dx, dy = e.x_root - sx, e.y_root - sy
-        if moved or abs(dx) > 4 or abs(dy) > 4:
-            self._drag = (sx, sy, wx, wy, True)
-            self.root.geometry("+%d+%d" % (wx + dx, wy + dy))
 
-    def on_release(self, e):
-        drag, self._drag, self._resize = self._drag, None, None
-        if drag and drag[4]:            # war ein Verschieben, kein Klick
-            return
-        if self.hit_edge(e.x, e.y):
-            return
-        hit = self.hit_button(e.x, e.y)
-        if hit == "close":
-            self.root.destroy()
-        elif hit == "next":
-            self.next_word()
-        elif hit == "back":
-            self.go_back()
-        elif hit == "lang":
-            self.toggle_start()
-        else:
-            self.flip()
-
-    def on_configure(self, e):
-        if e.widget is not self.root:
-            return
-        if (e.width, e.height) != (self.w, self.h):
-            self.w, self.h = e.width, e.height
-            self._wrapcache.clear()
-            self.draw()
+def main():
+    QApplication.setApplicationName("Voci")
+    qapp = QApplication(sys.argv)
+    qapp.setQuitOnLastWindowClosed(False)
+    voci = Voci(qapp)
+    qapp.aboutToQuit.connect(lambda: None)
+    rueckgabe = qapp.exec()
+    del voci
+    sys.exit(rueckgabe)
 
 
 if __name__ == "__main__":
-    Voci()
+    main()
