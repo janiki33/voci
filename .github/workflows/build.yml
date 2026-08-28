@@ -228,7 +228,7 @@ jobs:
           NOTES
 
           # Ältere Releases aufräumen, damit die Seite übersichtlich bleibt.
-          # Schlaegt das fehl, ist das kein Grund, den Build rot zu faerben.
+          # Schlägt das fehl, ist das kein Grund, den Build rot zu färben.
           gh release list --repo "$REPO" --limit 100 --json tagName \
             --jq '.[].tagName' | tail -n +4 | while read -r alt; do
               echo "lösche altes Release $alt"

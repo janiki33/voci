@@ -1,4 +1,4 @@
-; Inno-Setup-Skript für Voci.
+﻿; Inno-Setup-Skript für Voci.
 ;
 ; Legt die Ordnerfassung an einem festen Ort ab, damit der Updater weiss, wo er
 ; die Dateien austauschen muss - beim Entpacken einer ZIP in den Download-Ordner
