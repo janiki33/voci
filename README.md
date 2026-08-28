@@ -103,6 +103,9 @@ Falls ein Scanner trotzdem anschlägt:
 | Rand/Ecke ziehen | Fenster grösser/kleiner ziehen |
 | Taste **d** | Dark Mode an/aus |
 | Taste **u** | gefundenes Update einspielen |
+| Taste **m** | Menü öffnen/schliessen (Einstellungen, Voci-Sets) |
+| Taste **c** / **v** / **b** | Wort bewerten: kann ich nicht / neutral / kann ich schon |
+| Pfeil **←** / **→** | zurück / weiter (im Menü abschaltbar) |
 
 Der **Zurück-Knopf springt ein Wort zurück** – Flips und der Sprachumschalter
 zählen nicht als Schritt. Das vorherige Wort erscheint in der Sprache, die
@@ -124,6 +127,35 @@ Fenster den Fokus haben; ein Klick darauf genügt.
 **Auto-Weiter:** Tabbt man aus dem Fenster raus, nachdem das aktuelle Wort schon
 einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 (ein feiner Balken unten zählt runter) – ausser man tabbt vorher wieder rein.
+
+## Lern-Algorithmus
+
+Jede Vokabel trägt einen **Faktor**, der bei 1 startet und ihre
+Ziehungswahrscheinlichkeit gewichtet:
+
+- **c** („kann ich noch nicht") erhöht den Faktor um **+0.1** → das Wort kommt öfter
+- **v** (neutral) lässt ihn stehen
+- **b** („kann ich schon") senkt ihn um **−0.2** → das Wort kommt seltener
+
+Bei **Faktor 0 kommt das Wort gar nicht mehr**. Nach einer Bewertung leuchtet
+die Karte kurz auf — rot (c), gelb (v), grün (b) — und springt automatisch zum
+nächsten Wort. Geht man zurück (bis zu 10 Wörter) und bewertet neu, **ersetzt**
+die neue Wertung die alte, statt sich zu ihr zu addieren. Die Faktoren werden
+dauerhaft im Benutzerordner gespeichert.
+
+Die **Wertung** in der Wörterliste rechnet den Faktor um: 1 (und alles darüber)
+= 0 %, 0.5 = 50 %, 0 = 100 % — mit Farbpunkt von Rot über Gelb nach Grün.
+
+## Menü (Taste m)
+
+- **Einstellungen:** Dark Mode, immer im Vordergrund, Pfeiltasten-Navigation,
+  Flip-Animation, Auto-Weiter an/aus und dessen Dauer (3/5/10 s), Startsprache.
+  Alles wird gespeichert und beim nächsten Start wiederhergestellt.
+- **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich; aktuell gibt es
+  *Étape 1*). Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit
+  Faktor ≥ 1) und *Wörterliste anzeigen*: sortierbar nach A–Z oder Wertung,
+  mit Farbpunkt und Prozent pro Wort, ↺ setzt ein einzelnes Wort zurück,
+  *Alle zurücksetzen* alles.
 
 ## Updates
 

@@ -11,7 +11,11 @@ Bedienung:
   Kreis unten rechts (->)    -> nächstes Wort
   Karte ziehen               -> Fenster verschieben
   Rand ziehen                -> Fenster vergrössern/verkleinern
-  Taste d                    -> Dark Mode an/aus\n  Taste u                    -> gefundenes Update einspielen
+  Taste d                    -> Dark Mode an/aus
+  Taste u                    -> gefundenes Update einspielen
+  Taste m                    -> Menü (Einstellungen, Voci-Sets)
+  Taste c / v / b            -> Wort bewerten: kann ich nicht / neutral / kann ich
+  Pfeil links / rechts       -> zurück / weiter (abschaltbar im Menü)
 
 Wenn das Fenster den Fokus verliert und das aktuelle Wort schon geflippt
 wurde, kommt nach 5 Sekunden automatisch das nächste Wort
@@ -221,6 +225,85 @@ def lade_vokabeln():
     return EINGEBAUTE_VOCAB
 
 
+STANDARD_EINSTELLUNGEN = {
+    "thema": "hell",
+    "startsprache": "fr",
+    "pfeiltasten": True,          # mit Pfeil links/rechts navigieren
+    "auto_weiter": True,          # beim Raustabben automatisch weiter
+    "auto_dauer": 5,              # Sekunden bis zum Auto-Weiter
+    "flip_animation": True,
+    "immer_vorne": True,          # Fenster immer im Vordergrund
+    "sets": ["etape1"],
+    "schwere_modus": False,       # nur Wörter mit Faktor >= 1 üben
+}
+
+# Bewertung: c = kann ich noch nicht, v = neutral, b = kann ich schon.
+# Jeder Eintrag trägt einen Faktor (Start 1), der die Ziehungswahrscheinlichkeit
+# gewichtet: b senkt ihn um 0.2, c erhöht ihn um 0.1, v lässt ihn stehen.
+# Bei Faktor 0 kommt das Wort nicht mehr dran.
+WERTUNG_DELTA = {"c": +0.1, "v": 0.0, "b": -0.2}
+WERTUNG_BLITZ = {"c": (221, 84, 74), "v": (235, 196, 92), "b": (96, 186, 112)}
+FAKTOR_MIN, FAKTOR_MAX = 0.0, 3.0
+BLITZ_MS = 260                    # so lange leuchtet die Karte nach c/v/b
+
+
+def _json_datei(name, standard):
+    try:
+        daten = json.loads((datenordner() / name).read_text(encoding="utf-8"))
+        if isinstance(daten, type(standard)):
+            return daten
+    except Exception:
+        pass
+    return standard
+
+
+def _json_speichern(name, daten):
+    try:
+        (datenordner() / name).write_text(
+            json.dumps(daten, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def lade_einstellungen():
+    e = dict(STANDARD_EINSTELLUNGEN)
+    gespeichert = _json_datei("einstellungen.json", {})
+    for k in e:
+        if k in gespeichert and isinstance(gespeichert[k], type(e[k])):
+            e[k] = gespeichert[k]
+    return e
+
+
+def speichere_einstellungen(e):
+    _json_speichern("einstellungen.json", e)
+
+
+def lade_faktoren():
+    """Wertungen pro Wort, am französischen Text festgemacht, damit sie eine
+    aktualisierte Wortliste überleben."""
+    roh = _json_datei("wertungen.json", {})
+    return {k: float(v) for k, v in roh.items()
+            if isinstance(v, (int, float)) and FAKTOR_MIN <= v <= FAKTOR_MAX}
+
+
+def speichere_faktoren(f):
+    _json_speichern("wertungen.json", {k: round(v, 4) for k, v in f.items()
+                                       if abs(v - 1.0) > 1e-9})
+
+
+def wertung_prozent(faktor):
+    """Faktor 1 (oder mehr) = 0 %, Faktor 0.5 = 50 %, Faktor 0 = 100 %."""
+    return int(round(max(0.0, min(1.0, 1.0 - faktor)) * 100))
+
+
+def wertung_farbe(prozent):
+    """Rot (0 %) über Gelb (50 %) nach Grün (100 %)."""
+    rot, gelb, gruen = (221, 84, 74), (235, 196, 92), (96, 186, 112)
+    if prozent <= 50:
+        return blend(rot, gelb, prozent / 50.0)
+    return blend(gelb, gruen, (prozent - 50) / 50.0)
+
+
 def _hole(adresse, timeout=NETZ_TIMEOUT):
     anfrage = urllib.request.Request(adresse, headers={"User-Agent": "Voci"})
     with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
@@ -427,15 +510,22 @@ class Voci:
         self.font_tiny = tkfont.Font(family=familie, size=-self.tiny_px)
 
         # Zustand
+        self.einst = lade_einstellungen()
         self.vocab = lade_vokabeln()
-        self.deck = list(range(len(self.vocab)))
-        random.shuffle(self.deck)
-        self.pos = 0
-        self.thema = "hell"
-        self.start_side = "fr"
+        self.faktoren = lade_faktoren()          # fr-Text -> Faktor
+        self.sets = [{"id": "etape1", "name": "Étape 1",
+                      "indizes": list(range(len(self.vocab)))}]
+        self.thema = self.einst["thema"]
+        self.start_side = self.einst["startsprache"]
         self.side = self.start_side
         self.flips = 0
-        self.history = []            # bis zu HISTORY_MAX Wortpositionen
+        self.idx = None
+        self.idx = self.ziehe_wort()
+        self.history = []            # [{"idx": ..., "delta": ...}], max. 10
+        self.undo_delta = None       # Wertung des aktuellen Worts (ersetzbar)
+        self.blitz = None            # Blitzfarbe nach c/v/b
+        self.menu = None             # Menüfenster
+        self.liste_fenster = None    # Wörterliste
         self.scale = 1.0             # Flip-Animation
         self.animating = False
         self.hover = None
@@ -464,6 +554,7 @@ class Voci:
             self.root.bind("<FocusIn>", self._on_focus_in)
             self.root.bind("<FocusOut>", lambda e: self.set_active(False))
 
+        self.root.attributes("-topmost", bool(self.einst["immer_vorne"]))
         self.root.lift()
         self.draw()
         self._starte_hintergrund()
@@ -584,7 +675,8 @@ class Voci:
     def set_active(self, active):
         if active and not self.was_active:
             self.cancel_auto()
-        elif not active and self.was_active and self.flips >= FLIPS_NEEDED:
+        elif (not active and self.was_active and self.flips >= FLIPS_NEEDED
+              and self.einst["auto_weiter"]):
             # Ohne verlässliche Fokusmeldungen lieber gar nicht automatisch
             # weiterspringen, als ständig ungefragt weiterzuspringen.
             if IS_WIN or self.seen_focus:
@@ -594,7 +686,7 @@ class Voci:
     # ------------------------------------------------------------ Auto-Weiter
     def start_auto(self):
         self.cancel_auto(redraw=False)
-        self._auto_left = AUTO_DELAY_MS
+        self._auto_left = int(self.einst["auto_dauer"]) * 1000
         self._tick_auto()
 
     def _tick_auto(self):
@@ -603,7 +695,7 @@ class Voci:
             self.countdown_frac = None
             self.next_word()
             return
-        self.countdown_frac = self._auto_left / AUTO_DELAY_MS
+        self.countdown_frac = self._auto_left / (int(self.einst["auto_dauer"]) * 1000)
         self.draw()
         self._auto_left -= 100
         self.auto_job = self.root.after(100, self._tick_auto)
@@ -619,39 +711,98 @@ class Voci:
     # ------------------------------------------------------------ Wortlogik
     @property
     def word(self):
-        return self.vocab[self.deck[self.pos]]
+        return self.vocab[self.idx]
 
-    def remember(self):
-        """Wort merken – nur Wortwechsel landen in der Historie, Flips und der
-        Sprachumschalter nicht."""
-        self.history.append(self.pos)
+    def faktor(self, idx):
+        return self.faktoren.get(self.vocab[idx]["fr"], 1.0)
+
+    def setze_faktor(self, idx, wert):
+        wert = max(FAKTOR_MIN, min(FAKTOR_MAX, wert))
+        schluessel = self.vocab[idx]["fr"]
+        if abs(wert - 1.0) < 1e-9:
+            self.faktoren.pop(schluessel, None)
+        else:
+            self.faktoren[schluessel] = wert
+        speichere_faktoren(self.faktoren)
+
+    def aktive_indizes(self):
+        indizes = []
+        aktiv = set(self.einst["sets"]) or {self.sets[0]["id"]}
+        for satz in self.sets:
+            if satz["id"] in aktiv:
+                indizes.extend(satz["indizes"])
+        return indizes or self.sets[0]["indizes"]
+
+    def ziehe_wort(self):
+        """Gewichtete Zufallswahl: der Faktor eines Worts ist sein Gewicht.
+        Faktor 0 kommt nie, Faktor über 1 entsprechend öfter. Im Modus
+        'schwere Wörter' zählen nur Einträge mit Faktor >= 1."""
+        kandidaten = [i for i in self.aktive_indizes() if i != self.idx]
+        if not kandidaten:
+            return self.idx if self.idx is not None else 0
+        if self.einst["schwere_modus"]:
+            schwer = [i for i in kandidaten if self.faktor(i) >= 1.0]
+            if schwer:
+                kandidaten = schwer
+        gewichte = [max(0.0, self.faktor(i)) for i in kandidaten]
+        if sum(gewichte) <= 0:
+            return random.choice(kandidaten)
+        return random.choices(kandidaten, weights=gewichte, k=1)[0]
+
+    def remember(self, delta=None):
+        """Wort samt seiner (ersetzbaren) Wertung in die Historie legen."""
+        self.history.append({"idx": self.idx, "delta": delta})
         if len(self.history) > HISTORY_MAX:
             self.history.pop(0)
 
     def next_word(self):
-        if self.animating:
+        if self.animating or self.blitz:
             return
         self.cancel_auto(redraw=False)
-        self.remember()
+        # Wer ohne neue Wertung weitergeht, behält die alte - sie bleibt
+        # über die Historie weiterhin ersetzbar.
+        self.remember(self.undo_delta)
+        self.undo_delta = None
+        neu = self.ziehe_wort()
 
         def commit():
-            self.pos = (self.pos + 1) % len(self.deck)
+            self.idx = neu
             self.flips = 0
             self.side = self.start_side
         self.animate(commit)
 
     def go_back(self):
-        """Ein Wort zurück, in der gerade sichtbaren Sprache: steht man auf DE,
-        kommt auch das vorherige Wort auf DE."""
-        if not self.history or self.animating:
+        """Ein Wort zurück, in der gerade sichtbaren Sprache. Die damals
+        abgegebene Wertung wird mitgenommen und kann mit c/v/b ersetzt werden."""
+        if not self.history or self.animating or self.blitz:
             return
         self.cancel_auto(redraw=False)
-        pos = self.history.pop()
+        eintrag = self.history.pop()
+        self.undo_delta = eintrag["delta"]
 
         def commit():
-            self.pos = pos
+            self.idx = eintrag["idx"]
             self.flips = 0
         self.animate(commit)
+
+    def bewerte(self, taste):
+        """c/v/b: Faktor anpassen, Karte kurz aufleuchten lassen, weiter.
+        Nach einem Zurück ersetzt die neue Wertung die alte, statt sich zu
+        ihr zu addieren."""
+        if self.animating or self.blitz:
+            return
+        self.cancel_auto(redraw=False)
+        delta = WERTUNG_DELTA[taste]
+        alter_anteil = self.undo_delta or 0.0
+        self.setze_faktor(self.idx, self.faktor(self.idx) - alter_anteil + delta)
+        self.undo_delta = delta
+        self.blitz = WERTUNG_BLITZ[taste]
+        self.draw()
+        self.root.after(BLITZ_MS, self._blitz_ende)
+
+    def _blitz_ende(self):
+        self.blitz = None
+        self.next_word()
 
     def flip(self):
         if self.animating:
@@ -667,6 +818,8 @@ class Voci:
         if self.animating:
             return
         self.start_side = "de" if self.start_side == "fr" else "fr"
+        self.einst["startsprache"] = self.start_side
+        speichere_einstellungen(self.einst)
         if self.flips == 0 and self.side != self.start_side:
 
             def commit():
@@ -678,6 +831,11 @@ class Voci:
     # ------------------------------------------------------------ Animation
     def animate(self, commit):
         if self.animating:
+            return
+        if not self.einst["flip_animation"]:
+            commit()
+            self.scale = 1.0
+            self.draw()
             return
         self.animating = True
         steps = 7
@@ -710,7 +868,10 @@ class Voci:
         """Hell/dunkel wechseln - die Knopfbilder sind pro Palette gerendert
         und muessen deshalb neu erzeugt werden."""
         self.thema = "dunkel" if self.thema == "hell" else "hell"
+        self.einst["thema"] = self.thema
+        speichere_einstellungen(self.einst)
         self.imgcache.clear()
+        self.menu_neu_aufbauen()
         self.draw()
 
     def on_key(self, event):
@@ -719,6 +880,14 @@ class Voci:
             self.toggle_thema()
         elif taste == "u":
             self.update_starten()
+        elif taste == "m":
+            self.menu_umschalten()
+        elif taste in WERTUNG_DELTA:
+            self.bewerte(taste)
+        elif taste == "left" and self.einst["pfeiltasten"]:
+            self.go_back()
+        elif taste == "right" and self.einst["pfeiltasten"]:
+            self.next_word()
 
     # ------------------------------------------------------------ Layout
     def buttons(self):
@@ -748,8 +917,9 @@ class Voci:
         cx = w / 2.0
         half = max(2.0, (w / 2.0 - 3) * max(self.scale, 0.02))
 
+        flaeche = self.blitz or self.farbe("bg")
         rounded_rect(c, cx - half, 3, cx + half, h - 3, self.corner,
-                     fill=hexc(self.farbe("bg")),
+                     fill=hexc(flaeche),
                      outline=self.farbe("rand"), width=1)
 
         if self.scale <= 0.12:
@@ -764,7 +934,7 @@ class Voci:
         c.create_text(cx, h / 2.0, text=lines, font=self.font_word,
                       fill=hexc(self.farbe("fg")), justify="center")
 
-        rest = self.scale > 0.999
+        rest = self.scale > 0.999 and not self.blitz
         for tag, bx, by, r in self.buttons():
             if tag == "back" and not self.history:
                 continue
@@ -874,6 +1044,361 @@ class Voci:
         elif n > 28:
             base *= 0.87
         return max(8, int(base))
+
+    # ------------------------------------------------------------ Menü
+    def menu_umschalten(self):
+        if self.menu and self.menu.winfo_exists():
+            self.menu.destroy()
+            self.menu = None
+            return
+        self._menu_bauen("einstellungen")
+
+    def menu_neu_aufbauen(self):
+        """Nach einem Themawechsel mit den neuen Farben neu aufbauen."""
+        if self.menu and self.menu.winfo_exists():
+            tab = getattr(self, "_menu_tab", "einstellungen")
+            self.menu.destroy()
+            self._menu_bauen(tab)
+        if self.liste_fenster and self.liste_fenster.winfo_exists():
+            self.liste_fenster.destroy()
+            self.liste_zeigen()
+
+    def _stil(self, widget, **extra):
+        werte = dict(bg=hexc(self.farbe("bg")), fg=hexc(self.farbe("fg")),
+                     highlightthickness=0, bd=0)
+        werte.update(extra)
+        try:
+            widget.configure(**werte)
+        except tk.TclError:
+            pass
+
+    def _knopfstil(self, knopf, **extra):
+        self._stil(knopf, activebackground=hexc(self.farbe("hover")),
+                   activeforeground=hexc(self.farbe("fg")), relief="flat",
+                   cursor=CURSOR_HAND, **extra)
+
+    def _wahlstil(self, w):
+        """Check- und Radioknöpfe im Kartenlook."""
+        self._stil(w, activebackground=hexc(self.farbe("bg")),
+                   activeforeground=hexc(self.farbe("fg")),
+                   selectcolor=hexc(self.farbe("hover")),
+                   anchor="w", relief="flat", cursor=CURSOR_HAND)
+
+    def _fenster_deckel(self, fenster, titel, schliessen):
+        """Kopfzeile: Titel links, X rechts, Fläche zieht das Fenster."""
+        deckel = tk.Frame(fenster, bg=hexc(self.farbe("bg")))
+        deckel.pack(fill="x", padx=10, pady=(8, 0))
+        lab = tk.Label(deckel, text=titel, font=self.font_menu_titel)
+        self._stil(lab)
+        lab.pack(side="left")
+        x = tk.Button(deckel, text="×", font=self.font_menu, width=2,
+                      command=schliessen)
+        self._knopfstil(x)
+        x.pack(side="right")
+        zustand = {}
+        def start(e):
+            zustand["p"] = (e.x_root, e.y_root, fenster.winfo_x(), fenster.winfo_y())
+        def zieh(e):
+            sx, sy, wx, wy = zustand.get("p", (e.x_root, e.y_root,
+                                               fenster.winfo_x(), fenster.winfo_y()))
+            fenster.geometry("+%d+%d" % (wx + e.x_root - sx, wy + e.y_root - sy))
+        for ziel in (deckel, lab):
+            ziel.bind("<ButtonPress-1>", start)
+            ziel.bind("<B1-Motion>", zieh)
+        return deckel
+
+    def _neben_karte(self, fenster, breite, hoehe):
+        x = self.root.winfo_x() + self.w + 12
+        y = self.root.winfo_y()
+        if x + breite > fenster.winfo_screenwidth():
+            x = max(0, self.root.winfo_x() - breite - 12)
+        fenster.geometry("%dx%d+%d+%d" % (breite, hoehe, x, y))
+
+    def _menu_bauen(self, tab):
+        self._menu_tab = tab
+        self.font_menu = tkfont.Font(font=self.font_tiny)
+        self.font_menu.configure(size=-int(13 * self.k))
+        self.font_menu_titel = tkfont.Font(font=self.font_menu)
+        self.font_menu_titel.configure(weight="bold")
+
+        m = tk.Toplevel(self.root)
+        m.overrideredirect(True)
+        m.attributes("-topmost", True)
+        m.configure(bg=hexc(self.farbe("bg")),
+                    highlightthickness=1,
+                    highlightbackground=self.farbe("rand"))
+        self.menu = m
+        self._neben_karte(m, int(300 * self.k), int(330 * self.k))
+        m.bind("<Key>", lambda e: (self.menu_umschalten()
+                                   if e.keysym.lower() in ("m", "escape") else None))
+
+        def zu():
+            m.destroy()
+            self.menu = None
+        self._fenster_deckel(m, "Voci", zu)
+
+        # Tab-Leiste
+        leiste = tk.Frame(m, bg=hexc(self.farbe("bg")))
+        leiste.pack(fill="x", padx=10, pady=(6, 2))
+        for schluessel, name in (("einstellungen", "Einstellungen"),
+                                 ("sets", "Voci-Sets")):
+            aktiv = schluessel == tab
+            b = tk.Button(leiste, text=name, font=self.font_menu,
+                          command=lambda k=schluessel: self._menu_bauen_neu(k))
+            self._knopfstil(b)
+            if aktiv:
+                b.configure(font=self.font_menu_titel)
+            b.pack(side="left", padx=(0, 10))
+            strich = tk.Frame(leiste, height=2, width=1,
+                              bg=hexc(self.farbe("fg")) if aktiv
+                              else hexc(self.farbe("bg")))
+        inhalt = tk.Frame(m, bg=hexc(self.farbe("bg")))
+        inhalt.pack(fill="both", expand=True, padx=14, pady=8)
+        if tab == "einstellungen":
+            self._tab_einstellungen(inhalt)
+        else:
+            self._tab_sets(inhalt)
+
+    def _menu_bauen_neu(self, tab):
+        if self.menu and self.menu.winfo_exists():
+            self.menu.destroy()
+        self._menu_bauen(tab)
+
+    def _tab_einstellungen(self, wurzel):
+        e = self.einst
+
+        def schalter(text, schluessel, wirkung=None):
+            var = tk.BooleanVar(master=wurzel, value=e[schluessel])
+            def um():
+                e[schluessel] = var.get()
+                speichere_einstellungen(e)
+                if wirkung:
+                    wirkung(var.get())
+            cb = tk.Checkbutton(wurzel, text=text, variable=var, command=um,
+                                font=self.font_menu)
+            self._wahlstil(cb)
+            cb.pack(fill="x", pady=1)
+            return var
+
+        dunkel = tk.BooleanVar(master=wurzel, value=self.thema == "dunkel")
+        def dunkel_um():
+            self.toggle_thema()
+        cb = tk.Checkbutton(wurzel, text="Dark Mode (Taste d)", variable=dunkel,
+                            command=dunkel_um, font=self.font_menu)
+        self._wahlstil(cb)
+        cb.pack(fill="x", pady=1)
+
+        schalter("Immer im Vordergrund", "immer_vorne",
+                 lambda an: self.root.attributes("-topmost", bool(an)))
+        schalter("Mit Pfeiltasten navigieren", "pfeiltasten")
+        schalter("Flip-Animation", "flip_animation")
+        schalter("Auto-Weiter beim Raustabben", "auto_weiter")
+
+        zeile = tk.Frame(wurzel, bg=hexc(self.farbe("bg")))
+        zeile.pack(fill="x", pady=(4, 1))
+        lab = tk.Label(zeile, text="Auto-Weiter nach", font=self.font_menu)
+        self._stil(lab)
+        lab.pack(side="left")
+        dauer = tk.IntVar(master=wurzel, value=int(e["auto_dauer"]))
+        def dauer_um():
+            e["auto_dauer"] = dauer.get()
+            speichere_einstellungen(e)
+        for sek in (3, 5, 10):
+            rb = tk.Radiobutton(zeile, text="%d s" % sek, value=sek,
+                                variable=dauer, command=dauer_um,
+                                font=self.font_menu)
+            self._wahlstil(rb)
+            rb.pack(side="left", padx=(6, 0))
+
+        zeile2 = tk.Frame(wurzel, bg=hexc(self.farbe("bg")))
+        zeile2.pack(fill="x", pady=1)
+        lab2 = tk.Label(zeile2, text="Startsprache", font=self.font_menu)
+        self._stil(lab2)
+        lab2.pack(side="left")
+        sprache = tk.StringVar(master=wurzel, value=self.start_side)
+        def sprache_um():
+            if sprache.get() != self.start_side:
+                self.toggle_start()
+        for wert, name in (("fr", "FR"), ("de", "DE")):
+            rb = tk.Radiobutton(zeile2, text=name, value=wert, variable=sprache,
+                                command=sprache_um, font=self.font_menu)
+            self._wahlstil(rb)
+            rb.pack(side="left", padx=(6, 0))
+
+        info = tk.Label(wurzel, text="Bewerten: c = kann ich nicht,\n"
+                                     "v = neutral, b = kann ich schon",
+                        font=self.font_menu, justify="left")
+        self._stil(info, fg=self.farbe("rand"))
+        info.pack(fill="x", pady=(10, 0))
+
+    def _tab_sets(self, wurzel):
+        e = self.einst
+        for satz in self.sets:
+            zeile = tk.Frame(wurzel, bg=hexc(self.farbe("bg")))
+            zeile.pack(fill="x", pady=2)
+            var = tk.BooleanVar(master=wurzel, value=satz["id"] in e["sets"])
+            def um(sid=satz["id"], v=None, var=var):
+                gewaehlt = set(e["sets"])
+                if var.get():
+                    gewaehlt.add(sid)
+                else:
+                    gewaehlt.discard(sid)
+                if not gewaehlt:            # mindestens ein Set bleibt aktiv
+                    gewaehlt.add(sid)
+                    var.set(True)
+                e["sets"] = sorted(gewaehlt)
+                speichere_einstellungen(e)
+            cb = tk.Checkbutton(zeile, text="%s  (%d Wörter)"
+                                % (satz["name"], len(satz["indizes"])),
+                                variable=var, command=um, font=self.font_menu)
+            self._wahlstil(cb)
+            cb.pack(side="left", fill="x", expand=True)
+            punkte = tk.Button(zeile, text="⋯", font=self.font_menu, width=2,
+                               command=lambda k=zeile: self._set_optionen(k))
+            self._knopfstil(punkte)
+            punkte.pack(side="right")
+
+    def _set_optionen(self, anker):
+        popup = tk.Menu(self.menu, tearoff=0,
+                        bg=hexc(self.farbe("bg")), fg=hexc(self.farbe("fg")),
+                        activebackground=hexc(self.farbe("hover")),
+                        activeforeground=hexc(self.farbe("fg")),
+                        font=self.font_menu, relief="flat", bd=1)
+        schwer = tk.BooleanVar(master=self.menu,
+                               value=self.einst["schwere_modus"])
+        def schwer_um():
+            self.einst["schwere_modus"] = not self.einst["schwere_modus"]
+            speichere_einstellungen(self.einst)
+        popup.add_checkbutton(label="Schwere Wörter üben (Faktor ≥ 1)",
+                              variable=schwer, command=schwer_um)
+        popup.add_command(label="Wörterliste anzeigen", command=self.liste_zeigen)
+        popup.tk_popup(anker.winfo_rootx() + anker.winfo_width(),
+                       anker.winfo_rooty())
+
+    # ------------------------------------------------------------ Wörterliste
+    def liste_zeigen(self):
+        if self.liste_fenster and self.liste_fenster.winfo_exists():
+            self.liste_fenster.lift()
+            return
+        self.font_menu = getattr(self, "font_menu", None) or tkfont.Font(
+            font=self.font_tiny)
+        self.font_menu.configure(size=-int(13 * self.k))
+        self.font_menu_titel = tkfont.Font(font=self.font_menu)
+        self.font_menu_titel.configure(weight="bold")
+
+        f = tk.Toplevel(self.root)
+        f.overrideredirect(True)
+        f.attributes("-topmost", True)
+        f.configure(bg=hexc(self.farbe("bg")), highlightthickness=1,
+                    highlightbackground=self.farbe("rand"))
+        self.liste_fenster = f
+        self.liste_sortierung = getattr(self, "liste_sortierung", "az")
+        self._neben_karte(f, int(360 * self.k), int(420 * self.k))
+
+        def zu():
+            f.destroy()
+            self.liste_fenster = None
+        self._fenster_deckel(f, "Wörterliste", zu)
+        f.bind("<Key>", lambda e2: zu() if e2.keysym == "Escape" else None)
+
+        kopf = tk.Frame(f, bg=hexc(self.farbe("bg")))
+        kopf.pack(fill="x", padx=10, pady=(6, 2))
+        lab = tk.Label(kopf, text="Sortieren:", font=self.font_menu)
+        self._stil(lab)
+        lab.pack(side="left")
+        for wert, name in (("az", "A–Z"), ("wertung", "Wertung")):
+            b = tk.Button(kopf, text=name, font=(self.font_menu_titel
+                          if self.liste_sortierung == wert else self.font_menu),
+                          command=lambda w=wert: self._liste_sortieren(w))
+            self._knopfstil(b)
+            b.pack(side="left", padx=(6, 0))
+        alle = tk.Button(kopf, text="Alle zurücksetzen", font=self.font_menu,
+                         command=self._liste_alles_zuruecksetzen)
+        self._knopfstil(alle)
+        alle.pack(side="right")
+
+        rumpf = tk.Frame(f, bg=hexc(self.farbe("bg")))
+        rumpf.pack(fill="both", expand=True, padx=(10, 0), pady=(2, 10))
+        cnv = tk.Canvas(rumpf, bg=hexc(self.farbe("bg")), bd=0,
+                        highlightthickness=0)
+        balken = tk.Scrollbar(rumpf, orient="vertical", command=cnv.yview,
+                              width=int(10 * self.k))
+        cnv.configure(yscrollcommand=balken.set)
+        balken.pack(side="right", fill="y")
+        cnv.pack(side="left", fill="both", expand=True)
+        self.liste_canvas = cnv
+        cnv.bind("<Button-1>", self._liste_klick)
+        cnv.bind("<MouseWheel>", lambda e2: cnv.yview_scroll(
+            -1 if e2.delta > 0 else 1, "units"))
+        cnv.bind("<Button-4>", lambda e2: cnv.yview_scroll(-1, "units"))
+        cnv.bind("<Button-5>", lambda e2: cnv.yview_scroll(1, "units"))
+        self._liste_fuellen()
+
+    def _liste_sortieren(self, wie):
+        self.liste_sortierung = wie
+        f = self.liste_fenster
+        if f and f.winfo_exists():
+            f.destroy()
+            self.liste_fenster = None
+        self.liste_zeigen()
+
+    def _liste_reihenfolge(self):
+        indizes = list(self.aktive_indizes())
+        if self.liste_sortierung == "wertung":
+            indizes.sort(key=lambda i: (-wertung_prozent(self.faktor(i)),
+                                        self.vocab[i]["fr"].lower()))
+        else:
+            indizes.sort(key=lambda i: self.vocab[i]["fr"].lower())
+        return indizes
+
+    def _liste_fuellen(self):
+        cnv = self.liste_canvas
+        cnv.delete("all")
+        zeilenhoehe = int(24 * self.k)
+        breite = int(360 * self.k) - int(10 * self.k) * 2 - int(10 * self.k)
+        self.liste_zeilen = self._liste_reihenfolge()
+        for reihe, i in enumerate(self.liste_zeilen):
+            y = reihe * zeilenhoehe
+            prozent = wertung_prozent(self.faktor(i))
+            farbe = wertung_farbe(prozent)
+            r = int(5 * self.k)
+            mx = breite - int(64 * self.k)
+            text = "%s – %s" % (self.vocab[i]["fr"], self.vocab[i]["de"])
+            frei = mx - r - int(10 * self.k) - 4
+            if self.font_menu.measure(text) > frei:
+                while text and self.font_menu.measure(text + "…") > frei:
+                    text = text[:-1]
+                text += "…"
+            cnv.create_text(4, y + zeilenhoehe / 2, text=text, anchor="w",
+                            font=self.font_menu, fill=hexc(self.farbe("fg")))
+            cnv.create_oval(mx - r, y + zeilenhoehe / 2 - r,
+                            mx + r, y + zeilenhoehe / 2 + r,
+                            fill=hexc(farbe), width=0)
+            cnv.create_text(mx + int(12 * self.k), y + zeilenhoehe / 2,
+                            text="%d%%" % prozent, anchor="w",
+                            font=self.font_menu, fill=hexc(self.farbe("fg")))
+            cnv.create_text(breite - int(8 * self.k), y + zeilenhoehe / 2,
+                            text="↺", anchor="e", font=self.font_menu,
+                            fill=self.farbe("rand"),
+                            tags=("reset", "reset-%d" % i))
+        cnv.configure(scrollregion=(0, 0, breite,
+                                    len(self.liste_zeilen) * zeilenhoehe))
+
+    def _liste_klick(self, event):
+        cnv = self.liste_canvas
+        x = cnv.canvasx(event.x)
+        y = cnv.canvasy(event.y)
+        for element in cnv.find_overlapping(x - 6, y - 6, x + 6, y + 6):
+            for tag in cnv.gettags(element):
+                if tag.startswith("reset-"):
+                    self.setze_faktor(int(tag.split("-")[1]), 1.0)
+                    self._liste_fuellen()
+                    return
+
+    def _liste_alles_zuruecksetzen(self):
+        self.faktoren.clear()
+        speichere_faktoren(self.faktoren)
+        self._liste_fuellen()
 
     # ------------------------------------------------------------ Maus
     def hit_button(self, x, y):
