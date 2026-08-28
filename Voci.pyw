@@ -11,7 +11,7 @@ Bedienung:
   Kreis unten rechts (->)    -> nächstes Wort
   Karte ziehen               -> Fenster verschieben
   Rand ziehen                -> Fenster vergrössern/verkleinern
-  Taste d                    -> Dark Mode an/aus
+  Taste d                    -> Dark Mode an/aus\n  Taste u                    -> gefundenes Update einspielen
 
 Wenn das Fenster den Fokus verliert und das aktuelle Wort schon geflippt
 wurde, kommt nach 5 Sekunden automatisch das nächste Wort
@@ -20,12 +20,22 @@ wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 
 import json
 import math
+import os
+import pathlib
 import random
+import shutil
+import subprocess
 import sys
+import tempfile
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
+import urllib.error
+import urllib.request
+import zipfile
 
-VOCAB = json.loads(r'''[{"fr": "Se présenter", "de": "sich jemandem vorstellen"}, {"fr": "la présentation", "de": "die Vorstellung von etwas oder jemandem"}, {"fr": "caractériser", "de": "charakterisieren"}, {"fr": "le caractère", "de": "der Charakter"}, {"fr": "enchanté/enchantée (adj.)", "de": "Sehr erfreut!"}, {"fr": "une adresse", "de": "eine Adresse"}, {"fr": "s’adresser à", "de": "sich wenden/richten an"}, {"fr": "mémoriser", "de": "sich einprägen/sich merken"}, {"fr": "la mémoire", "de": "das Gedächtnis/die Erinnerung"}, {"fr": "la date de naissance", "de": "das Geburtsdatum"}, {"fr": "la naissance", "de": "die Geburt"}, {"fr": "naître", "de": "geboren werden"}, {"fr": "Je suis né/née le 15 août 1994", "de": "Ich bin am 15. August 1994 geboren"}, {"fr": "le mois/les mois", "de": "der Monat/die Monate"}, {"fr": "janvier, février, mars, avril, mai, juin, juillet, août, septembre, octobre, novembre, décembre", "de": "Januar, Februar, März, April, Mai, Juni, Juli, August, September, Oktober, November, Dezember"}, {"fr": "en janvier, en août, en juin", "de": "im Januar, im August, im Juni"}, {"fr": "les jours (le jour) de la semaine :", "de": "die Tage der Woche:"}, {"fr": "lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche", "de": "Montag, Dienstag, Mittwoch, Donnerstag, Freitag, Samstag, Sonntag"}, {"fr": "le lundi, le samedi, le dimanche", "de": "am/immer am Montag, am Samstag, am Sonntag"}, {"fr": "à ce soir – à demain – à samedi", "de": "bis heute Abend - bis morgen – bis am Samstag"}, {"fr": "le matin – ce matin", "de": "der/am Morgen – heute Morgen"}, {"fr": "l’après-midi, (m.) – cet après-midi", "de": "der/am Nachmittag – heute Nachmittag"}, {"fr": "le soir – ce soir", "de": "der/am Abend – heute Abend"}, {"fr": "les quatre saisons, (f.):", "de": "die 4 Jahreszeiten:"}, {"fr": "l’été (m.), l’automne(m.), l’hiver (m.), le printemps", "de": "der Sommer, der Herbst, der Winter, der Frühling"}, {"fr": "en été, en automne, en hiver, au printemps", "de": "im Sommer, im Herbst, im Winter, im Frühling"}, {"fr": "un état civil", "de": "ein Zivilstand"}, {"fr": "marié/mariée (adj.)", "de": "verheiratet"}, {"fr": "célibataire (adj.)", "de": "ledig"}, {"fr": "divorcé/divorcée (adj.)", "de": "geschieden"}, {"fr": "veuf/veuve (adj.)", "de": "verwitwet"}, {"fr": "la langue maternelle", "de": "die Muttersprache"}, {"fr": "la langue étrangère", "de": "die Fremdsprache"}, {"fr": "apprendre une langue", "de": "eine Sprache lernen"}, {"fr": "un enregistrement", "de": "eine (Radio-/Musik...)-Aufnahme"}, {"fr": "enregistrer", "de": "(Musik,…) aufnehmen"}, {"fr": "une émission", "de": "eine Fernsehsendung"}, {"fr": "regarder la télévision", "de": "fernsehen"}, {"fr": "écouter la radio", "de": "Radio hören"}, {"fr": "être d’origine italienne/suisse/allemande", "de": "ital./schweiz./deutscher Herkunft sein"}, {"fr": "traduire : je traduis", "de": "übersetzen: ich übersetze"}, {"fr": "la traduction", "de": "die Übersetzung"}, {"fr": "le portable", "de": "das Handy"}, {"fr": "téléphoner à quelqu’un - appeler quelqu‘un", "de": "jemandem telefonieren/jem. anrufen"}, {"fr": "se décider", "de": "sich entscheiden"}, {"fr": "la décision", "de": "die Entscheidung"}, {"fr": "se reposer", "de": "sich ausruhen, sich erholen"}, {"fr": "s’inscrire", "de": "sich einschreiben"}, {"fr": "répondre", "de": "antworten"}, {"fr": "la réponse", "de": "die Antwort"}, {"fr": "cocher la réponse correcte", "de": "die richtige Antwort ankreuzen"}, {"fr": "faire des études (f.)", "de": "ein Studium machen"}, {"fr": "aller en boîte", "de": "in die Disco gehen"}, {"fr": "choisir", "de": "auswählen"}, {"fr": "le choix", "de": "(die Aus)-Wahl"}, {"fr": "le numéro de portable", "de": "die Handynummer"}, {"fr": "demander quelque chose à quelqu’un", "de": "jemanden um etwas bitten"}, {"fr": "participer à", "de": "teilnehmen an"}, {"fr": "la participation", "de": "die Teilnahme"}, {"fr": "poser une question", "de": "eine Frage stellen"}, {"fr": "s‘amuser", "de": "sich amüsieren"}, {"fr": "se coucher, aller au lit", "de": "ins Bett gehen"}, {"fr": "se dépêcher", "de": "sich beeilen"}, {"fr": "se doucher", "de": "sich duschen"}, {"fr": "s’ énerver", "de": "sich aufregen"}, {"fr": "s ’habiller", "de": "sich anziehen"}, {"fr": "se maquiller", "de": "sich schminken"}, {"fr": "s’occuper de", "de": "sich beschäftigen mit, sich kümmern um"}, {"fr": "se réveiller", "de": "aufwachen"}, {"fr": "à mon avis/selon moi", "de": "meiner Meinung nach"}, {"fr": "par contre", "de": "hingegen"}, {"fr": "avoir raison", "de": "Recht haben"}, {"fr": "avoir tort", "de": "unrecht haben"}, {"fr": "exagérer", "de": "übertreiben"}, {"fr": "trouver", "de": "finden"}, {"fr": "un emploi", "de": "eine (Arbeits-)Stelle"}, {"fr": "une erreur/une faute", "de": "ein Fehler"}, {"fr": "un projet d’avenir", "de": "ein Zukunftsplan/ein Projekt für die Zukunft"}, {"fr": "rendre visite à quelqu’un", "de": "jemanden besuchen"}, {"fr": "visiter un musée/une ville", "de": "ein Museum/eine Stadt besichtigen"}, {"fr": "fréquenter/faire l’école de Maturité Professionnelle", "de": "die BMS besuchen"}, {"fr": "la maturité professionnelle", "de": "die BM/Berufsmatura"}, {"fr": "le groupe", "de": "die Gruppe"}, {"fr": "parler anglais-espagnol-français-italien-japonais-polonais-russe-turc-allemand", "de": "englisch-spanisch-französisch-italienisch-japanisch-polnisch-russisch-türkisch-deutsch sprechen"}, {"fr": "avoir besoin de (j’ai besoin d’une langue étrangère)", "de": "brauchen (ich brauche eine Fremdsprache)"}, {"fr": "savoir parler français", "de": "französisch sprechen können"}, {"fr": "savoir", "de": "wissen, können (weil gelernt!)"}, {"fr": "connaître", "de": "kennen, kennenlernen"}, {"fr": "pouvoir", "de": "können, dürfen"}, {"fr": "l’Angleterre (f.)", "de": "England"}, {"fr": "un Anglais/une Anglaise", "de": "ein Engländer/eine Engländerin"}, {"fr": "anglais,e (adj.)", "de": "englisch"}, {"fr": "l‘ Espagne (f.)", "de": "Spanien"}, {"fr": "un Espagnol/une Espagnole", "de": "ein Spanier/eine Spanierin"}, {"fr": "espagnol,e (adj.)", "de": "spanisch"}, {"fr": "la France", "de": "Frankreich"}, {"fr": "un Français/une Française", "de": "ein Franzose/eine Französin"}, {"fr": "français,e (adj.)", "de": "französisch"}, {"fr": "l’Italie (f.)", "de": "Italien"}, {"fr": "un Italien/une Italienne", "de": "ein Italiener/eine Italienerin"}, {"fr": "italien/italienne (adj.)", "de": "italienisch"}, {"fr": "le Japon", "de": "Japan"}, {"fr": "un Japonais/une Japonaise", "de": "ein Japaner/eine Japanerin"}, {"fr": "japonais,e (adj.)", "de": "japanisch"}, {"fr": "la Russie", "de": "Russland"}, {"fr": "un Russe/une Russe", "de": "ein Russe/eine Russin"}, {"fr": "russe m,f (adj.)", "de": "russisch"}, {"fr": "l’Allemagne (f.)", "de": "Deutschland"}, {"fr": "un Allemand/une Allemande", "de": "ein Deutscher/eine Deutsche"}, {"fr": "allemand,e (adj.)", "de": "deutsch"}, {"fr": "la Croatie", "de": "Kroatien"}, {"fr": "croate (adj.)", "de": "kroatisch"}, {"fr": "la Serbie", "de": "Serbien"}, {"fr": "serbe (adj.)", "de": "serbisch"}, {"fr": "maîtriser quelque chose", "de": "etwas beherrschen"}, {"fr": "maîtriser une langue/une situation", "de": "eine Sprache/eine Situation beherrschen"}, {"fr": "utiliser qc comme", "de": "etwas benutzen als"}, {"fr": "apprendre qc", "de": "etw. lernen"}, {"fr": "apprendre à faire qc", "de": "lernen etw. zu machen"}, {"fr": "un apprentissage", "de": "eine Lehre/ein Lernen"}, {"fr": "un apprenti/une apprentie", "de": "ein Lehrling, ein Lernender/eine Lernende"}, {"fr": "améliorer qc", "de": "etw. verbessern"}, {"fr": "améliorer la prononciation", "de": "die Aussprache verbessern"}, {"fr": "accompagner", "de": "begleiten"}, {"fr": "être utile m,f (adj.)", "de": "nützlich sein"}, {"fr": "riche m,f (adj.)", "de": "reich"}, {"fr": "la richesse", "de": "der Reichtum"}, {"fr": "construire une phrase/une maison", "de": "einen Satz bilden, ein Haus bauen"}, {"fr": "disponible m,f (adj.)", "de": "verfügbar"}, {"fr": "partout", "de": "überall"}, {"fr": "nulle part", "de": "nirgends, nirgendwo"}, {"fr": "accéder à", "de": "Zugang erlangen"}, {"fr": "un accès (à l’internet)", "de": "ein (Internet-)Zugang"}, {"fr": "apprendre par coeur", "de": "auswendig lernen"}, {"fr": "un oeil-les yeux (pl.m)", "de": "ein Auge-die Augen"}, {"fr": "la vue", "de": "der Blick/das Sehen"}, {"fr": "voir", "de": "sehen"}, {"fr": "regarder", "de": "anschauen/schauen"}, {"fr": "le son", "de": "der Ton/Klang"}, {"fr": "sonner", "de": "tönen/läuten/klingeln"}, {"fr": "une oreille", "de": "ein Ohr"}, {"fr": "écouter", "de": "(zu-)hören"}, {"fr": "entendre", "de": "hören"}, {"fr": "une odeur", "de": "ein Geruch"}, {"fr": "un goût", "de": "ein Geschmack"}, {"fr": "ensemble", "de": "gemeinsam"}, {"fr": "parfois/de temps en temps", "de": "bisweilen/ hie und da,/ ab und zu"}, {"fr": "entier/entière (adj.)", "de": "ganz, gesamt"}, {"fr": "le lait entier", "de": "die Vollmilch"}, {"fr": "le monde entier", "de": "die ganze Welt"}, {"fr": "tout le monde (3. pers.sg.!)", "de": "jedermann; alle"}, {"fr": "quand, comment, où, pourquoi, combien, quel(s) quelle(s)", "de": "wann, wie, wo, warum, wieviel, welche"}, {"fr": "les aliments (m. pl.)", "de": "die Nahrungsmittel"}, {"fr": "le légume", "de": "das Gemüse"}, {"fr": "l’épinard (m.)", "de": "der Spinat"}, {"fr": "l’ail (m.)", "de": "der Knoblauch"}, {"fr": "la courgette", "de": "die Zucchetti"}, {"fr": "une asperge", "de": "eine Spargel"}, {"fr": "le chou", "de": "der Kohl"}, {"fr": "la pomme de terre", "de": "die Kartoffel"}, {"fr": "la tomate", "de": "die Tomate"}, {"fr": "la carotte", "de": "die Karotte"}, {"fr": "le champignon", "de": "der Pilz"}, {"fr": "l’oignon (m.)", "de": "die Zwiebel"}, {"fr": "le produit laitier", "de": "das Milchprodukt"}, {"fr": "le beurre", "de": "die Butter"}, {"fr": "la crème", "de": "der Rahm"}, {"fr": "le yaourt", "de": "das Joghurt"}, {"fr": "le fromage (la fondue, la raclette)", "de": "der Käse (das Fondue, das Raclette)"}, {"fr": "les fruits (m.pl.)", "de": "die Früchte"}, {"fr": "la fraise", "de": "die Erdbeere"}, {"fr": "la framboise", "de": "die Himbeere"}, {"fr": "la pomme", "de": "der Apfel"}, {"fr": "la poire", "de": "die Birne"}, {"fr": "le raisin", "de": "die Traube"}, {"fr": "l’abricot (m.)", "de": "die Aprikose"}, {"fr": "une orange", "de": "eine Orange"}, {"fr": "un citron", "de": "die Zitrone"}, {"fr": "un melon", "de": "eine Melone"}, {"fr": "une banane", "de": "eine Banane"}, {"fr": "un ananas", "de": "eine Ananas"}, {"fr": "une prune", "de": "eine Zwetschge"}, {"fr": "le pain", "de": "das Brot"}, {"fr": "le croissant", "de": "das Gipfeli"}, {"fr": "la baguette", "de": "das Stangenbrot, das Baguette"}, {"fr": "une tartine (de miel)", "de": "ein Brot mit Aufstrich (Honigbrot)"}, {"fr": "le muesli", "de": "das Müsli"}, {"fr": "cru, crue (adj.)", "de": "roh"}, {"fr": "cuit,e (adj.)", "de": "gekocht"}, {"fr": "le miel", "de": "der Honig"}, {"fr": "un œuf", "de": "ein Ei"}, {"fr": "la viande (la viande séchée)", "de": "das Fleisch (das Trockenfleisch)"}, {"fr": "la confiture", "de": "die Marmelade, die Konfitüre"}, {"fr": "le petit déjeuner, le déjeuner, le dîner", "de": "das Frühstück, das Mittagessen, das Abendessen"}, {"fr": "un repas", "de": "das Essen, die Mahlzeit"}, {"fr": "une boisson", "de": "ein Getränk"}, {"fr": "le plat (le plat préféré)", "de": "das Gericht (das Lieblingsessen)"}, {"fr": "un escargot", "de": "eine Schnecke"}, {"fr": "le saumon", "de": "der Lachs"}, {"fr": "le poireau", "de": "der Lauch"}, {"fr": "un filet de bœuf", "de": "ein Rinderfilet"}, {"fr": "faire un barbecue / une grillade", "de": "grillen"}, {"fr": "une épice, épicer", "de": "ein Gewürz, würzen"}, {"fr": "pimenté,e (adj.)", "de": "pikant, scharf (kulinarisch)"}, {"fr": "la volaille", "de": "das Geflügel"}, {"fr": "le poisson", "de": "der Fisch"}, {"fr": "le veau", "de": "das Kalb"}, {"fr": "la tarte", "de": "flacher Obstkuchen"}, {"fr": "le gâteau", "de": "der Kuchen"}, {"fr": "une carafe (d’eau)", "de": "eine Karaffe (Wasser)"}, {"fr": "oublier", "de": "vergessen"}, {"fr": "s’intéresser à", "de": "sich interessieren für"}, {"fr": "je m’intéresse aux langues", "de": "ich interessiere mich für Sprachen"}, {"fr": "bon/bonne (adj.)", "de": "gut, gütig"}, {"fr": "gentil/gentille (adj.)", "de": "nett, freundlich"}, {"fr": "méchant/méchante (adj.)", "de": "böse, gemein, boshaft"}, {"fr": "aimable (adj.)", "de": "liebenswürdig, freundlich"}, {"fr": "cher/chère (adj.)", "de": "lieb, teuer"}, {"fr": "être fier/fière de", "de": "stolz sein auf"}, {"fr": "paresseux/paresseuse (adj.)", "de": "faul"}, {"fr": "patient,e(adj.)", "de": "geduldig"}, {"fr": "impatient,e (adj.)", "de": "ungeduldig"}, {"fr": "la patience", "de": "die Geduld"}, {"fr": "prudent,e (adj.)", "de": "vorsichtig"}, {"fr": "adroit,e (adj.)", "de": "geschickt"}, {"fr": "aimer", "de": "lieben, mögen, gerne tun"}, {"fr": "il aime danser", "de": "er tanzt gerne"}, {"fr": "l’amour m.", "de": "die Liebe"}, {"fr": "être content/contente de", "de": "zufrieden sein mit"}, {"fr": "heureux/heureuse (adj.)", "de": "glücklich"}, {"fr": "malheureux-malheureuse (adj.", "de": "unglücklich"}, {"fr": "la joie", "de": "die Freude, das Vergnügen"}, {"fr": "le plaisir", "de": "das Vergnügen, die Freude"}, {"fr": "agréable m,f (adj.)", "de": "angenehm"}, {"fr": "désagréable m,f (adj.)", "de": "unangenehm"}, {"fr": "avoir envie de", "de": "Lust haben auf"}, {"fr": "l’espoir (m.)", "de": "die Hoffnung"}, {"fr": "espérer", "de": "hoffen"}, {"fr": "la surprise", "de": "die Überraschung"}, {"fr": "surprendre", "de": "überraschen"}, {"fr": "triste m,f (adj.)", "de": "traurig"}, {"fr": "regretter", "de": "bedauern"}, {"fr": "détester, haïr", "de": "verabscheuen, hassen"}]''')
+EINGEBAUTE_VOCAB = json.loads(r'''[{"fr": "Se présenter", "de": "sich jemandem vorstellen"}, {"fr": "la présentation", "de": "die Vorstellung von etwas oder jemandem"}, {"fr": "caractériser", "de": "charakterisieren"}, {"fr": "le caractère", "de": "der Charakter"}, {"fr": "enchanté/enchantée (adj.)", "de": "Sehr erfreut!"}, {"fr": "une adresse", "de": "eine Adresse"}, {"fr": "s’adresser à", "de": "sich wenden/richten an"}, {"fr": "mémoriser", "de": "sich einprägen/sich merken"}, {"fr": "la mémoire", "de": "das Gedächtnis/die Erinnerung"}, {"fr": "la date de naissance", "de": "das Geburtsdatum"}, {"fr": "la naissance", "de": "die Geburt"}, {"fr": "naître", "de": "geboren werden"}, {"fr": "Je suis né/née le 15 août 1994", "de": "Ich bin am 15. August 1994 geboren"}, {"fr": "le mois/les mois", "de": "der Monat/die Monate"}, {"fr": "janvier, février, mars, avril, mai, juin, juillet, août, septembre, octobre, novembre, décembre", "de": "Januar, Februar, März, April, Mai, Juni, Juli, August, September, Oktober, November, Dezember"}, {"fr": "en janvier, en août, en juin", "de": "im Januar, im August, im Juni"}, {"fr": "les jours (le jour) de la semaine :", "de": "die Tage der Woche:"}, {"fr": "lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche", "de": "Montag, Dienstag, Mittwoch, Donnerstag, Freitag, Samstag, Sonntag"}, {"fr": "le lundi, le samedi, le dimanche", "de": "am/immer am Montag, am Samstag, am Sonntag"}, {"fr": "à ce soir – à demain – à samedi", "de": "bis heute Abend - bis morgen – bis am Samstag"}, {"fr": "le matin – ce matin", "de": "der/am Morgen – heute Morgen"}, {"fr": "l’après-midi, (m.) – cet après-midi", "de": "der/am Nachmittag – heute Nachmittag"}, {"fr": "le soir – ce soir", "de": "der/am Abend – heute Abend"}, {"fr": "les quatre saisons, (f.):", "de": "die 4 Jahreszeiten:"}, {"fr": "l’été (m.), l’automne(m.), l’hiver (m.), le printemps", "de": "der Sommer, der Herbst, der Winter, der Frühling"}, {"fr": "en été, en automne, en hiver, au printemps", "de": "im Sommer, im Herbst, im Winter, im Frühling"}, {"fr": "un état civil", "de": "ein Zivilstand"}, {"fr": "marié/mariée (adj.)", "de": "verheiratet"}, {"fr": "célibataire (adj.)", "de": "ledig"}, {"fr": "divorcé/divorcée (adj.)", "de": "geschieden"}, {"fr": "veuf/veuve (adj.)", "de": "verwitwet"}, {"fr": "la langue maternelle", "de": "die Muttersprache"}, {"fr": "la langue étrangère", "de": "die Fremdsprache"}, {"fr": "apprendre une langue", "de": "eine Sprache lernen"}, {"fr": "un enregistrement", "de": "eine (Radio-/Musik...)-Aufnahme"}, {"fr": "enregistrer", "de": "(Musik,…) aufnehmen"}, {"fr": "une émission", "de": "eine Fernsehsendung"}, {"fr": "regarder la télévision", "de": "fernsehen"}, {"fr": "écouter la radio", "de": "Radio hören"}, {"fr": "être d’origine italienne/suisse/allemande", "de": "ital./schweiz./deutscher Herkunft sein"}, {"fr": "traduire : je traduis", "de": "übersetzen: ich übersetze"}, {"fr": "la traduction", "de": "die Übersetzung"}, {"fr": "le portable", "de": "das Handy"}, {"fr": "téléphoner à quelqu’un - appeler quelqu‘un", "de": "jemandem telefonieren/jem. anrufen"}, {"fr": "se décider", "de": "sich entscheiden"}, {"fr": "la décision", "de": "die Entscheidung"}, {"fr": "se reposer", "de": "sich ausruhen, sich erholen"}, {"fr": "s’inscrire", "de": "sich einschreiben"}, {"fr": "répondre", "de": "antworten"}, {"fr": "la réponse", "de": "die Antwort"}, {"fr": "cocher la réponse correcte", "de": "die richtige Antwort ankreuzen"}, {"fr": "faire des études (f.)", "de": "ein Studium machen"}, {"fr": "aller en boîte", "de": "in die Disco gehen"}, {"fr": "choisir", "de": "auswählen"}, {"fr": "le choix", "de": "(die Aus)-Wahl"}, {"fr": "le numéro de portable", "de": "die Handynummer"}, {"fr": "demander quelque chose à quelqu’un", "de": "jemanden um etwas bitten"}, {"fr": "participer à", "de": "teilnehmen an"}, {"fr": "la participation", "de": "die Teilnahme"}, {"fr": "poser une question", "de": "eine Frage stellen"}, {"fr": "s‘amuser", "de": "sich amüsieren"}, {"fr": "se coucher, aller au lit", "de": "ins Bett gehen"}, {"fr": "se dépêcher", "de": "sich beeilen"}, {"fr": "se doucher", "de": "sich duschen"}, {"fr": "s’ énerver", "de": "sich aufregen"}, {"fr": "s ’habiller", "de": "sich anziehen"}, {"fr": "se maquiller", "de": "sich schminken"}, {"fr": "s’occuper de", "de": "sich beschäftigen mit, sich kümmern um"}, {"fr": "se réveiller", "de": "aufwachen"}, {"fr": "à mon avis/selon moi", "de": "meiner Meinung nach"}, {"fr": "par contre", "de": "hingegen"}, {"fr": "avoir raison", "de": "Recht haben"}, {"fr": "avoir tort", "de": "unrecht haben"}, {"fr": "exagérer", "de": "übertreiben"}, {"fr": "trouver", "de": "finden"}, {"fr": "un emploi", "de": "eine (Arbeits-)Stelle"}, {"fr": "une erreur/une faute", "de": "ein Fehler"}, {"fr": "un projet d’avenir", "de": "ein Zukunftsplan/ein Projekt für die Zukunft"}, {"fr": "rendre visite à quelqu’un", "de": "jemanden besuchen"}, {"fr": "visiter un musée/une ville", "de": "ein Museum/eine Stadt besichtigen"}, {"fr": "fréquenter/faire l’école de Maturité Professionnelle", "de": "die BMS besuchen"}, {"fr": "la maturité professionnelle", "de": "die BM/Berufsmatura"}, {"fr": "le groupe", "de": "die Gruppe"}, {"fr": "parler anglais-espagnol-français-italien-japonais-polonais-russe-turc-allemand", "de": "englisch-spanisch-französisch-italienisch-japanisch-polnisch-russisch-türkisch-deutsch sprechen"}, {"fr": "avoir besoin de (j’ai besoin d’une langue étrangère)", "de": "brauchen (ich brauche eine Fremdsprache)"}, {"fr": "savoir parler français", "de": "französisch sprechen können"}, {"fr": "savoir", "de": "wissen, können (weil gelernt!)"}, {"fr": "connaître", "de": "kennen, kennenlernen"}, {"fr": "pouvoir", "de": "können, dürfen"}, {"fr": "l’Angleterre (f.)", "de": "England"}, {"fr": "un Anglais/une Anglaise", "de": "ein Engländer/eine Engländerin"}, {"fr": "anglais,e (adj.)", "de": "englisch"}, {"fr": "l‘ Espagne (f.)", "de": "Spanien"}, {"fr": "un Espagnol/une Espagnole", "de": "ein Spanier/eine Spanierin"}, {"fr": "espagnol,e (adj.)", "de": "spanisch"}, {"fr": "la France", "de": "Frankreich"}, {"fr": "un Français/une Française", "de": "ein Franzose/eine Französin"}, {"fr": "français,e (adj.)", "de": "französisch"}, {"fr": "l’Italie (f.)", "de": "Italien"}, {"fr": "un Italien/une Italienne", "de": "ein Italiener/eine Italienerin"}, {"fr": "italien/italienne (adj.)", "de": "italienisch"}, {"fr": "le Japon", "de": "Japan"}, {"fr": "un Japonais/une Japonaise", "de": "ein Japaner/eine Japanerin"}, {"fr": "japonais,e (adj.)", "de": "japanisch"}, {"fr": "la Russie", "de": "Russland"}, {"fr": "un Russe/une Russe", "de": "ein Russe/eine Russin"}, {"fr": "russe m,f (adj.)", "de": "russisch"}, {"fr": "l’Allemagne (f.)", "de": "Deutschland"}, {"fr": "un Allemand/une Allemande", "de": "ein Deutscher/eine Deutsche"}, {"fr": "allemand,e (adj.)", "de": "deutsch"}, {"fr": "la Croatie", "de": "Kroatien"}, {"fr": "croate (adj.)", "de": "kroatisch"}, {"fr": "la Serbie", "de": "Serbien"}, {"fr": "serbe (adj.)", "de": "serbisch"}, {"fr": "maîtriser quelque chose", "de": "etwas beherrschen"}, {"fr": "maîtriser une langue/une situation", "de": "eine Sprache/eine Situation beherrschen"}, {"fr": "utiliser qc comme", "de": "etwas benutzen als"}, {"fr": "apprendre qc", "de": "etw. lernen"}, {"fr": "apprendre à faire qc", "de": "lernen etw. zu machen"}, {"fr": "un apprentissage", "de": "eine Lehre/ein Lernen"}, {"fr": "un apprenti/une apprentie", "de": "ein Lehrling, ein Lernender/eine Lernende"}, {"fr": "améliorer qc", "de": "etw. verbessern"}, {"fr": "améliorer la prononciation", "de": "die Aussprache verbessern"}, {"fr": "accompagner", "de": "begleiten"}, {"fr": "être utile m,f (adj.)", "de": "nützlich sein"}, {"fr": "riche m,f (adj.)", "de": "reich"}, {"fr": "la richesse", "de": "der Reichtum"}, {"fr": "construire une phrase/une maison", "de": "einen Satz bilden, ein Haus bauen"}, {"fr": "disponible m,f (adj.)", "de": "verfügbar"}, {"fr": "partout", "de": "überall"}, {"fr": "nulle part", "de": "nirgends, nirgendwo"}, {"fr": "accéder à", "de": "Zugang erlangen"}, {"fr": "un accès (à l’internet)", "de": "ein (Internet-)Zugang"}, {"fr": "apprendre par coeur", "de": "auswendig lernen"}, {"fr": "un oeil-les yeux (pl.m)", "de": "ein Auge-die Augen"}, {"fr": "la vue", "de": "der Blick/das Sehen"}, {"fr": "voir", "de": "sehen"}, {"fr": "regarder", "de": "anschauen/schauen"}, {"fr": "le son", "de": "der Ton/Klang"}, {"fr": "sonner", "de": "tönen/läuten/klingeln"}, {"fr": "une oreille", "de": "ein Ohr"}, {"fr": "écouter", "de": "(zu-)hören"}, {"fr": "entendre", "de": "hören"}, {"fr": "une odeur", "de": "ein Geruch"}, {"fr": "un goût", "de": "ein Geschmack"}, {"fr": "ensemble", "de": "gemeinsam"}, {"fr": "parfois/de temps en temps", "de": "bisweilen/ hie und da,/ ab und zu"}, {"fr": "entier/entière (adj.)", "de": "ganz, gesamt"}, {"fr": "le lait entier", "de": "die Vollmilch"}, {"fr": "le monde entier", "de": "die ganze Welt"}, {"fr": "tout le monde (3. pers.sg.!)", "de": "jedermann; alle"}, {"fr": "quand, comment, où, pourquoi, combien, quel(s) quelle(s)", "de": "wann, wie, wo, warum, wieviel, welche"}, {"fr": "les aliments (m. pl.)", "de": "die Nahrungsmittel"}, {"fr": "le légume", "de": "das Gemüse"}, {"fr": "l’épinard (m.)", "de": "der Spinat"}, {"fr": "l’ail (m.)", "de": "der Knoblauch"}, {"fr": "la courgette", "de": "die Zucchetti"}, {"fr": "une asperge", "de": "eine Spargel"}, {"fr": "le chou", "de": "der Kohl"}, {"fr": "la pomme de terre", "de": "die Kartoffel"}, {"fr": "la tomate", "de": "die Tomate"}, {"fr": "la carotte", "de": "die Karotte"}, {"fr": "le champignon", "de": "der Pilz"}, {"fr": "l’oignon (m.)", "de": "die Zwiebel"}, {"fr": "le produit laitier", "de": "das Milchprodukt"}, {"fr": "le beurre", "de": "die Butter"}, {"fr": "la crème", "de": "der Rahm"}, {"fr": "le yaourt", "de": "das Joghurt"}, {"fr": "le fromage (la fondue, la raclette)", "de": "der Käse (das Fondue, das Raclette)"}, {"fr": "les fruits (m.pl.)", "de": "die Früchte"}, {"fr": "la fraise", "de": "die Erdbeere"}, {"fr": "la framboise", "de": "die Himbeere"}, {"fr": "la pomme", "de": "der Apfel"}, {"fr": "la poire", "de": "die Birne"}, {"fr": "le raisin", "de": "die Traube"}, {"fr": "l’abricot (m.)", "de": "die Aprikose"}, {"fr": "une orange", "de": "eine Orange"}, {"fr": "un citron", "de": "die Zitrone"}, {"fr": "un melon", "de": "eine Melone"}, {"fr": "une banane", "de": "eine Banane"}, {"fr": "un ananas", "de": "eine Ananas"}, {"fr": "une prune", "de": "eine Zwetschge"}, {"fr": "le pain", "de": "das Brot"}, {"fr": "le croissant", "de": "das Gipfeli"}, {"fr": "la baguette", "de": "das Stangenbrot, das Baguette"}, {"fr": "une tartine (de miel)", "de": "ein Brot mit Aufstrich (Honigbrot)"}, {"fr": "le muesli", "de": "das Müsli"}, {"fr": "cru, crue (adj.)", "de": "roh"}, {"fr": "cuit,e (adj.)", "de": "gekocht"}, {"fr": "le miel", "de": "der Honig"}, {"fr": "un œuf", "de": "ein Ei"}, {"fr": "la viande (la viande séchée)", "de": "das Fleisch (das Trockenfleisch)"}, {"fr": "la confiture", "de": "die Marmelade, die Konfitüre"}, {"fr": "le petit déjeuner, le déjeuner, le dîner", "de": "das Frühstück, das Mittagessen, das Abendessen"}, {"fr": "un repas", "de": "das Essen, die Mahlzeit"}, {"fr": "une boisson", "de": "ein Getränk"}, {"fr": "le plat (le plat préféré)", "de": "das Gericht (das Lieblingsessen)"}, {"fr": "un escargot", "de": "eine Schnecke"}, {"fr": "le saumon", "de": "der Lachs"}, {"fr": "le poireau", "de": "der Lauch"}, {"fr": "un filet de bœuf", "de": "ein Rinderfilet"}, {"fr": "faire un barbecue / une grillade", "de": "grillen"}, {"fr": "une épice, épicer", "de": "ein Gewürz, würzen"}, {"fr": "pimenté,e (adj.)", "de": "pikant, scharf (kulinarisch)"}, {"fr": "la volaille", "de": "das Geflügel"}, {"fr": "le poisson", "de": "der Fisch"}, {"fr": "le veau", "de": "das Kalb"}, {"fr": "la tarte", "de": "flacher Obstkuchen"}, {"fr": "le gâteau", "de": "der Kuchen"}, {"fr": "une carafe (d’eau)", "de": "eine Karaffe (Wasser)"}, {"fr": "oublier", "de": "vergessen"}, {"fr": "s’intéresser à", "de": "sich interessieren für"}, {"fr": "je m’intéresse aux langues", "de": "ich interessiere mich für Sprachen"}, {"fr": "bon/bonne (adj.)", "de": "gut, gütig"}, {"fr": "gentil/gentille (adj.)", "de": "nett, freundlich"}, {"fr": "méchant/méchante (adj.)", "de": "böse, gemein, boshaft"}, {"fr": "aimable (adj.)", "de": "liebenswürdig, freundlich"}, {"fr": "cher/chère (adj.)", "de": "lieb, teuer"}, {"fr": "être fier/fière de", "de": "stolz sein auf"}, {"fr": "paresseux/paresseuse (adj.)", "de": "faul"}, {"fr": "patient,e(adj.)", "de": "geduldig"}, {"fr": "impatient,e (adj.)", "de": "ungeduldig"}, {"fr": "la patience", "de": "die Geduld"}, {"fr": "prudent,e (adj.)", "de": "vorsichtig"}, {"fr": "adroit,e (adj.)", "de": "geschickt"}, {"fr": "aimer", "de": "lieben, mögen, gerne tun"}, {"fr": "il aime danser", "de": "er tanzt gerne"}, {"fr": "l’amour m.", "de": "die Liebe"}, {"fr": "être content/contente de", "de": "zufrieden sein mit"}, {"fr": "heureux/heureuse (adj.)", "de": "glücklich"}, {"fr": "malheureux-malheureuse (adj.", "de": "unglücklich"}, {"fr": "la joie", "de": "die Freude, das Vergnügen"}, {"fr": "le plaisir", "de": "das Vergnügen, die Freude"}, {"fr": "agréable m,f (adj.)", "de": "angenehm"}, {"fr": "désagréable m,f (adj.)", "de": "unangenehm"}, {"fr": "avoir envie de", "de": "Lust haben auf"}, {"fr": "l’espoir (m.)", "de": "die Hoffnung"}, {"fr": "espérer", "de": "hoffen"}, {"fr": "la surprise", "de": "die Überraschung"}, {"fr": "surprendre", "de": "überraschen"}, {"fr": "triste m,f (adj.)", "de": "traurig"}, {"fr": "regretter", "de": "bedauern"}, {"fr": "détester, haïr", "de": "verabscheuen, hassen"}]''')
+VERSION = "dev"
 
 # Fenstersymbol (Trikolore) als eingebettetes PNG - ohne das zeigt Tk in der
 # Taskleiste sein eigenes Feder-Logo.
@@ -158,6 +168,226 @@ def rounded_rect(cnv, x1, y1, x2, y2, r, **kw):
     return cnv.create_polygon(pts, smooth=True, **kw)
 
 
+# ---------------------------------------------------------------- Updates
+REPO = "janiki33/voci"
+NETZ_TIMEOUT = 8
+
+
+def _adresse(schluessel, standard):
+    """Adressen sind über Umgebungsvariablen überschreibbar - nur damit sich
+    der Updater gegen einen lokalen Server testen lässt."""
+    return os.environ.get(schluessel, standard)
+
+
+RELEASE_URL = _adresse("VOCI_RELEASE_URL",
+                       "https://github.com/%s/releases/latest" % REPO)
+DOWNLOAD_URL = _adresse("VOCI_DOWNLOAD_URL",
+                        "https://github.com/%s/releases/latest/download" % REPO)
+VOCAB_URL = _adresse("VOCI_VOCAB_URL",
+                     "https://raw.githubusercontent.com/%s/main/vokabeln.json" % REPO)
+TESTMODUS = bool(os.environ.get("VOCI_RELEASE_URL"))
+
+
+def datenordner():
+    """Pro Benutzer beschreibbarer Ort für die nachgeladene Wortliste."""
+    if IS_WIN:
+        wurzel = os.environ.get("APPDATA") or pathlib.Path.home()
+    elif IS_MAC:
+        wurzel = pathlib.Path.home() / "Library" / "Application Support"
+    else:
+        wurzel = os.environ.get("XDG_CONFIG_HOME") or pathlib.Path.home() / ".config"
+    ordner = pathlib.Path(wurzel) / "Voci"
+    ordner.mkdir(parents=True, exist_ok=True)
+    return ordner
+
+
+def vokabeln_gueltig(daten):
+    """Eine kaputte oder halbe Datei darf das Programm nicht lahmlegen."""
+    return (isinstance(daten, list) and len(daten) >= 10
+            and all(isinstance(e, dict) and e.get("fr") and e.get("de")
+                    for e in daten))
+
+
+def lade_vokabeln():
+    """Nachgeladene Liste bevorzugen, sonst die eingebaute."""
+    try:
+        datei = datenordner() / "vokabeln.json"
+        if datei.exists():
+            daten = json.loads(datei.read_text(encoding="utf-8"))
+            if vokabeln_gueltig(daten):
+                return daten
+    except Exception:
+        pass
+    return EINGEBAUTE_VOCAB
+
+
+def _hole(adresse, timeout=NETZ_TIMEOUT):
+    anfrage = urllib.request.Request(adresse, headers={"User-Agent": "Voci"})
+    with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
+        return antwort.read()
+
+
+def vokabeln_auffrischen():
+    """Holt die aktuelle Wortliste. Wirkt ab dem nächsten Start."""
+    try:
+        daten = json.loads(_hole(VOCAB_URL).decode("utf-8"))
+        if not vokabeln_gueltig(daten):
+            return False
+        datei = datenordner() / "vokabeln.json"
+        neu = json.dumps(daten, ensure_ascii=False, indent=1)
+        if datei.exists() and datei.read_text(encoding="utf-8") == neu:
+            return False
+        datei.write_text(neu, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def neueste_version():
+    """Liest die Version aus der Weiterleitung von /releases/latest. Das ist
+    eine gewöhnliche Webanfrage und läuft damit in kein API-Limit."""
+    class OhneWeiterleitung(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    oeffner = urllib.request.build_opener(OhneWeiterleitung)
+    anfrage = urllib.request.Request(RELEASE_URL, headers={"User-Agent": "Voci"})
+    try:
+        with oeffner.open(anfrage, timeout=NETZ_TIMEOUT) as antwort:
+            ziel = antwort.geturl()
+    except urllib.error.HTTPError as fehler:
+        if fehler.code not in (301, 302, 303, 307, 308):
+            raise
+        ziel = fehler.headers.get("Location", "")
+    return ziel.rstrip("/").rsplit("/", 1)[-1] or None
+
+
+def installation():
+    """Was müsste ein Update ersetzen - eine Datei oder ein ganzer Ordner?"""
+    if "__compiled__" in globals():                  # mit Nuitka gebaut
+        pfad = pathlib.Path(sys.argv[0]).resolve()
+        if os.environ.get("NUITKA_ONEFILE_PARENT"):
+            return "einzeldatei", pfad
+        for eltern in pfad.parents:
+            if eltern.suffix == ".app":
+                return "ordner", eltern
+        return "ordner", pfad.parent
+    if getattr(sys, "frozen", False):                # mit PyInstaller gebaut
+        pfad = pathlib.Path(sys.executable).resolve()
+        for eltern in pfad.parents:
+            if eltern.suffix == ".app":
+                return "ordner", eltern
+        return "ordner", pfad.parent
+    return "einzeldatei", pathlib.Path(__file__).resolve()
+
+
+def asset_name(art):
+    """Welche Datei aus dem Release passt zu dieser Installation?"""
+    if os.environ.get("VOCI_ASSET"):                 # nur für Tests
+        return os.environ["VOCI_ASSET"]
+    if art == "einzeldatei":
+        if IS_WIN and "__compiled__" in globals():
+            return "Voci.exe"
+        return "Voci.pyw"
+    if IS_WIN:
+        return "Voci-Windows-Ordner.zip"
+    if IS_MAC:
+        return "Voci-macOS.zip"
+    return None                                      # dafür gibt es kein Release
+
+
+def update_vorbereiten(art, ziel, arbeitsordner):
+    """Lädt die passende Datei und legt daneben, was nachher an die Stelle von
+    *ziel* rücken soll. Es wird noch nichts ersetzt."""
+    name = asset_name(art)
+    if not name:
+        raise RuntimeError("für diese Fassung gibt es kein Update")
+    rohdaten = _hole("%s/%s" % (DOWNLOAD_URL, name), timeout=120)
+    arbeitsordner = pathlib.Path(arbeitsordner)
+
+    if not name.endswith(".zip"):
+        neu = arbeitsordner / ziel.name
+        neu.write_bytes(rohdaten)
+        if art == "einzeldatei" and not IS_WIN:
+            neu.chmod(0o755)
+        return neu
+
+    paket = arbeitsordner / name
+    paket.write_bytes(rohdaten)
+    entpackt = arbeitsordner / "entpackt"
+    with zipfile.ZipFile(paket) as archiv:
+        archiv.extractall(entpackt)
+    inhalt = [p for p in entpackt.iterdir() if not p.name.startswith("__MACOSX")]
+    if len(inhalt) != 1 or not inhalt[0].is_dir():
+        raise RuntimeError("unerwarteter Inhalt im Archiv")
+    neu = inhalt[0]
+    if not any(neu.rglob("Voci*")):
+        raise RuntimeError("im Archiv fehlt das Programm")
+    for datei in neu.rglob("*"):                     # Rechte gehen im ZIP verloren
+        if datei.is_file() and (datei.suffix in ("", ".sh") or "MacOS" in datei.parts):
+            try:
+                datei.chmod(0o755)
+            except OSError:
+                pass
+    return neu
+
+
+def tausch_starten(ziel, neu, startbefehl):
+    """Startet ein kleines Hilfsprogramm, das wartet, bis Voci beendet ist, und
+    dann tauscht. Ein laufendes Programm kann sich nicht selbst ersetzen.
+    Die alte Fassung wird erst weggeräumt, wenn die neue an Ort und Stelle ist -
+    schlägt der Tausch fehl, kommt die alte zurück."""
+    pid = os.getpid()
+    sicherung = "%s.alt" % ziel
+    if IS_WIN:
+        skript = pathlib.Path(neu).parent / "voci_update.cmd"
+        skript.write_text(
+            "@echo off\r\n"
+            ":warten\r\n"
+            'tasklist /fi "PID eq %d" 2>nul | find "%d" >nul\r\n'
+            "if not errorlevel 1 (\r\n"
+            "  timeout /t 1 /nobreak >nul\r\n"
+            "  goto warten\r\n"
+            ")\r\n"
+            'if exist "%s" rmdir /s /q "%s" 2>nul\r\n'
+            'if exist "%s" del /q "%s" 2>nul\r\n'
+            'move "%s" "%s" >nul || exit /b 1\r\n'
+            'move "%s" "%s" >nul || (move "%s" "%s" >nul & exit /b 1)\r\n'
+            'start "" %s\r\n'
+            % (pid, pid, sicherung, sicherung, sicherung, sicherung,
+               ziel, sicherung, neu, ziel, sicherung, ziel, startbefehl),
+            encoding="utf-8")
+        subprocess.Popen(["cmd", "/c", str(skript)], cwd=str(skript.parent),
+                         creationflags=0x08000000)   # ohne Konsolenfenster
+    else:
+        skript = pathlib.Path(neu).parent / "voci_update.sh"
+        skript.write_text(
+            "#!/bin/sh\n"
+            "while kill -0 %d 2>/dev/null; do sleep 0.5; done\n"
+            'rm -rf "%s"\n'
+            'mv "%s" "%s" || exit 1\n'
+            'mv "%s" "%s" || { mv "%s" "%s"; exit 1; }\n'
+            'rm -rf "%s"\n'
+            "%s &\n"
+            % (pid, sicherung, ziel, sicherung, neu, ziel, sicherung, ziel,
+               sicherung, startbefehl),
+            encoding="utf-8")
+        skript.chmod(0o755)
+        subprocess.Popen(["/bin/sh", str(skript)], cwd=str(skript.parent),
+                         start_new_session=True)
+
+
+def startbefehl_fuer(art, ziel):
+    if art == "ordner":
+        if IS_MAC and str(ziel).endswith(".app"):
+            return 'open "%s"' % ziel
+        exe = pathlib.Path(ziel) / ("Voci.exe" if IS_WIN else "Voci")
+        return '"%s"' % exe
+    if str(ziel).endswith(".pyw"):
+        return '"%s" "%s"' % (sys.executable, ziel)
+    return '"%s"' % ziel
+
+
 class Voci:
     def __init__(self):
         self.root = tk.Tk()
@@ -197,7 +427,8 @@ class Voci:
         self.font_tiny = tkfont.Font(family=familie, size=-self.tiny_px)
 
         # Zustand
-        self.deck = list(range(len(VOCAB)))
+        self.vocab = lade_vokabeln()
+        self.deck = list(range(len(self.vocab)))
         random.shuffle(self.deck)
         self.pos = 0
         self.thema = "hell"
@@ -212,6 +443,10 @@ class Voci:
         self.countdown_frac = None
         self.was_active = True
         self.seen_focus = False      # hat die Plattform je Fokus gemeldet?
+        self.update_version = None   # gefundene neuere Version
+        self.update_status = None    # Text für den Hinweis auf der Karte
+        self.update_fertig = None    # (art, ziel, neu) - bereit zum Tausch
+        self._letzter_hinweis = (None, None)
         self.imgcache = {}
         self._wrapcache = {}
 
@@ -231,7 +466,69 @@ class Voci:
 
         self.root.lift()
         self.draw()
+        self._starte_hintergrund()
+        self._ui_takt()
         self.root.mainloop()
+
+    # ------------------------------------------------------------ Updates
+    def _starte_hintergrund(self):
+        """Netzarbeit läuft in Hintergrundfäden und darf nie etwas umwerfen -
+        sie setzt nur Werte, gezeichnet wird im UI-Takt."""
+        threading.Thread(target=self._pruefe_wortliste, daemon=True).start()
+        if VERSION != "dev" or TESTMODUS:
+            threading.Thread(target=self._pruefe_version, daemon=True).start()
+
+    def _pruefe_wortliste(self):
+        try:
+            vokabeln_auffrischen()
+        except Exception:
+            pass
+
+    def _pruefe_version(self):
+        try:
+            neu = neueste_version()
+        except Exception:
+            return
+        if neu and neu != VERSION:
+            self.update_version = neu
+
+    def _ui_takt(self):
+        """Einziger Ort, an dem Ergebnisse der Hintergrundfäden ins Bild
+        kommen - Tk verträgt keine Zugriffe aus fremden Fäden."""
+        if self.update_fertig:
+            self._tauschen()
+            return
+        stand = (self.update_version, self.update_status)
+        if stand != self._letzter_hinweis:
+            self._letzter_hinweis = stand
+            self.draw()
+        self.root.after(500, self._ui_takt)
+
+    def update_starten(self):
+        if not self.update_version or self.update_status:
+            return
+        self.update_status = "lädt"
+        threading.Thread(target=self._update_laden, daemon=True).start()
+
+    def _update_laden(self):
+        try:
+            art, ziel = installation()
+            arbeitsordner = tempfile.mkdtemp(prefix="voci-update-")
+            neu = update_vorbereiten(art, ziel, arbeitsordner)
+            self.update_fertig = (art, ziel, neu)
+        except Exception:
+            self.update_status = "fehlgeschlagen"
+
+    def _tauschen(self):
+        art, ziel, neu = self.update_fertig
+        self.update_fertig = None
+        try:
+            tausch_starten(ziel, neu, startbefehl_fuer(art, ziel))
+        except Exception:
+            self.update_status = "fehlgeschlagen"
+            self.root.after(500, self._ui_takt)
+            return
+        self.root.destroy()
 
     # ------------------------------------------------------------ Plattform
     def _setup_transparency(self):
@@ -322,7 +619,7 @@ class Voci:
     # ------------------------------------------------------------ Wortlogik
     @property
     def word(self):
-        return VOCAB[self.deck[self.pos]]
+        return self.vocab[self.deck[self.pos]]
 
     def remember(self):
         """Wort merken – nur Wortwechsel landen in der Historie, Flips und der
@@ -417,8 +714,11 @@ class Voci:
         self.draw()
 
     def on_key(self, event):
-        if event.keysym.lower() == "d":
+        taste = event.keysym.lower()
+        if taste == "d":
             self.toggle_thema()
+        elif taste == "u":
+            self.update_starten()
 
     # ------------------------------------------------------------ Layout
     def buttons(self):
@@ -487,6 +787,12 @@ class Voci:
                 c.create_text(x, by, text=self.start_side.upper(),
                               font=self.font_tiny, fill=hexc(self.farbe("fg")))
 
+        hinweis = self.update_hinweis()
+        if hinweis and rest and not self.countdown_frac:
+            self.font_tiny.configure(size=-self.tiny_px)
+            c.create_text(cx, h - 14 * self.k, text=hinweis,
+                          font=self.font_tiny, fill=self.farbe("rand"))
+
         if self.countdown_frac and rest:
             bw = (w - 2 * (self.pad + self.br + 12 * self.k)) * self.countdown_frac
             if bw > 0:
@@ -546,6 +852,15 @@ class Voci:
             if part:
                 out.append(part)
         return out
+
+    def update_hinweis(self):
+        if self.update_status == "lädt":
+            return "Update wird geladen …"
+        if self.update_status == "fehlgeschlagen":
+            return "Update fehlgeschlagen"
+        if self.update_version:
+            return "Update verfügbar · Taste u"
+        return None
 
     def word_size(self, text):
         """Schriftgrösse in Pixeln – plattformunabhängig, weil negative

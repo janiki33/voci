@@ -11,7 +11,20 @@ permissions:
   contents: write
 
 jobs:
+  # Der Tag wird einmal bestimmt und an alle Jobs weitergereicht. Sonst könnte
+  # er zwischen den Jobs über Mitternacht springen, und die eingebaute Version
+  # wiche vom Release-Tag ab - der Updater würde dann dauerhaft ein Update
+  # melden, das schon installiert ist.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.bestimmen.outputs.tag }}
+    steps:
+      - id: bestimmen
+        run: echo "tag=v$(date -u +%Y.%m.%d)-${GITHUB_SHA:0:7}" >> "$GITHUB_OUTPUT"
+
   windows:
+    needs: version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +34,8 @@ jobs:
 
       - name: Vokabeln und Icons erzeugen
         shell: bash
+        env:
+          VOCI_VERSION: ${{ needs.version.outputs.tag }}
         run: |
           pip install --upgrade pillow
           python build/make_icons.py
@@ -79,6 +94,7 @@ jobs:
           path: out/
 
   macos:
+    needs: version
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +103,8 @@ jobs:
           python-version: '3.12'
 
       - name: Vokabeln und Icons erzeugen
+        env:
+          VOCI_VERSION: ${{ needs.version.outputs.tag }}
         run: |
           pip install --upgrade pillow
           python build/make_icons.py
@@ -126,7 +144,7 @@ jobs:
           path: out/
 
   release:
-    needs: [windows, macos]
+    needs: [version, windows, macos]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -147,7 +165,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           ls -la out
-          TAG="v$(date -u +%Y.%m.%d)-${GITHUB_SHA:0:7}"
+          TAG="${{ needs.version.outputs.tag }}"
           echo "Tag: $TAG"
           gh release create "$TAG" out/* --repo "$REPO" \
             --target "$GITHUB_SHA" --latest \

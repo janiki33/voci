@@ -102,6 +102,7 @@ Falls ein Scanner trotzdem anschlägt:
 | Karte ziehen | Fenster verschieben |
 | Rand/Ecke ziehen | Fenster grösser/kleiner ziehen |
 | Taste **d** | Dark Mode an/aus |
+| Taste **u** | gefundenes Update einspielen |
 
 Der **Zurück-Knopf springt ein Wort zurück** – Flips und der Sprachumschalter
 zählen nicht als Schritt. Das vorherige Wort erscheint in der Sprache, die
@@ -124,6 +125,41 @@ Fenster den Fokus haben; ein Klick darauf genügt.
 einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 (ein feiner Balken unten zählt runter) – ausser man tabbt vorher wieder rein.
 
+## Updates
+
+Das Programm hält sich selbst aktuell, in zwei getrennten Teilen.
+
+**Wortliste.** Bei jedem Start lädt Voci im Hintergrund `vokabeln.json` aus
+diesem Repo und legt sie im Benutzerordner ab (`%APPDATA%\Voci` unter Windows,
+`~/Library/Application Support/Voci` unter macOS, `~/.config/Voci` unter Linux).
+Ab dem nächsten Start gilt die neue Liste. Neue Vokabeln brauchen also keinen
+neuen Download — nur einen Push auf `main`. Eine unvollständige oder kaputte
+Datei wird verworfen; dann bleibt die eingebaute Liste in Betrieb.
+
+**Programm.** Ebenfalls beim Start prüft Voci, ob es eine neuere Fassung gibt.
+Falls ja, erscheint unten auf der Karte dezent *„Update verfügbar · Taste u"*.
+Ein Druck auf **u** lädt die passende Datei, tauscht sie aus und startet das
+Programm neu.
+
+Ein paar Entscheidungen dahinter:
+
+- Die Versionsabfrage nutzt die Weiterleitung von `/releases/latest` statt der
+  GitHub-API. Das ist eine gewöhnliche Webanfrage und läuft damit nicht in das
+  API-Limit von 60 Abfragen pro Stunde und IP-Adresse — in einem Schulnetz
+  hinter einer gemeinsamen Adresse wäre das sonst schnell erreicht.
+- Ein laufendes Programm kann sich unter Windows nicht selbst überschreiben.
+  Deshalb schreibt Voci ein kleines Hilfsskript, das wartet, bis das Programm
+  beendet ist, dann tauscht und neu startet.
+- Getauscht wird erst, wenn die neue Fassung vollständig heruntergeladen und
+  entpackt ist. Die alte wird beiseitegelegt und erst gelöscht, wenn die neue
+  steht; scheitert der Tausch, kommt die alte zurück.
+- Alle Netzzugriffe laufen in Hintergrundfäden mit kurzem Zeitlimit und werden
+  bei Fehlern still verworfen. Ohne Internet startet und läuft Voci normal.
+
+Welche Datei geholt wird, hängt davon ab, wie Voci installiert ist: die
+Ordnerfassung ersetzt ihren Ordner, die Einzeldatei sich selbst, das
+macOS-Bundle sich selbst.
+
 ## Vokabeln ändern
 
 Die Wortpaare liegen in `vokabeln.json` (`fr` / `de`). Nach einer Änderung die App
@@ -135,6 +171,8 @@ python build/make_app.py
 ```
 
 Beim Push auf `main` baut GitHub Actions daraus automatisch eine neue `Voci.exe`.
+Für neue Vokabeln genügt aber schon die Änderung an `vokabeln.json` — laufende
+Installationen holen sie sich beim nächsten Start von selbst.
 
 Quelle der Vokabeln: `Voca_étape_R1_BMV_B_2025` (Word-Dokument, Tabelle FR|DE).
 

@@ -11,7 +11,7 @@ Bedienung:
   Kreis unten rechts (->)    -> nächstes Wort
   Karte ziehen               -> Fenster verschieben
   Rand ziehen                -> Fenster vergrössern/verkleinern
-  Taste d                    -> Dark Mode an/aus
+  Taste d                    -> Dark Mode an/aus\n  Taste u                    -> gefundenes Update einspielen
 
 Wenn das Fenster den Fokus verliert und das aktuelle Wort schon geflippt
 wurde, kommt nach 5 Sekunden automatisch das nächste Wort
@@ -20,12 +20,22 @@ wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 
 import json
 import math
+import os
+import pathlib
 import random
+import shutil
+import subprocess
 import sys
+import tempfile
+import threading
 import tkinter as tk
 import tkinter.font as tkfont
+import urllib.error
+import urllib.request
+import zipfile
 
-VOCAB = json.loads(r'''__VOCAB_JSON__''')
+EINGEBAUTE_VOCAB = json.loads(r'''__VOCAB_JSON__''')
+VERSION = "__VERSION__"
 
 # Fenstersymbol (Trikolore) als eingebettetes PNG - ohne das zeigt Tk in der
 # Taskleiste sein eigenes Feder-Logo.
@@ -158,6 +168,226 @@ def rounded_rect(cnv, x1, y1, x2, y2, r, **kw):
     return cnv.create_polygon(pts, smooth=True, **kw)
 
 
+# ---------------------------------------------------------------- Updates
+REPO = "janiki33/voci"
+NETZ_TIMEOUT = 8
+
+
+def _adresse(schluessel, standard):
+    """Adressen sind über Umgebungsvariablen überschreibbar - nur damit sich
+    der Updater gegen einen lokalen Server testen lässt."""
+    return os.environ.get(schluessel, standard)
+
+
+RELEASE_URL = _adresse("VOCI_RELEASE_URL",
+                       "https://github.com/%s/releases/latest" % REPO)
+DOWNLOAD_URL = _adresse("VOCI_DOWNLOAD_URL",
+                        "https://github.com/%s/releases/latest/download" % REPO)
+VOCAB_URL = _adresse("VOCI_VOCAB_URL",
+                     "https://raw.githubusercontent.com/%s/main/vokabeln.json" % REPO)
+TESTMODUS = bool(os.environ.get("VOCI_RELEASE_URL"))
+
+
+def datenordner():
+    """Pro Benutzer beschreibbarer Ort für die nachgeladene Wortliste."""
+    if IS_WIN:
+        wurzel = os.environ.get("APPDATA") or pathlib.Path.home()
+    elif IS_MAC:
+        wurzel = pathlib.Path.home() / "Library" / "Application Support"
+    else:
+        wurzel = os.environ.get("XDG_CONFIG_HOME") or pathlib.Path.home() / ".config"
+    ordner = pathlib.Path(wurzel) / "Voci"
+    ordner.mkdir(parents=True, exist_ok=True)
+    return ordner
+
+
+def vokabeln_gueltig(daten):
+    """Eine kaputte oder halbe Datei darf das Programm nicht lahmlegen."""
+    return (isinstance(daten, list) and len(daten) >= 10
+            and all(isinstance(e, dict) and e.get("fr") and e.get("de")
+                    for e in daten))
+
+
+def lade_vokabeln():
+    """Nachgeladene Liste bevorzugen, sonst die eingebaute."""
+    try:
+        datei = datenordner() / "vokabeln.json"
+        if datei.exists():
+            daten = json.loads(datei.read_text(encoding="utf-8"))
+            if vokabeln_gueltig(daten):
+                return daten
+    except Exception:
+        pass
+    return EINGEBAUTE_VOCAB
+
+
+def _hole(adresse, timeout=NETZ_TIMEOUT):
+    anfrage = urllib.request.Request(adresse, headers={"User-Agent": "Voci"})
+    with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
+        return antwort.read()
+
+
+def vokabeln_auffrischen():
+    """Holt die aktuelle Wortliste. Wirkt ab dem nächsten Start."""
+    try:
+        daten = json.loads(_hole(VOCAB_URL).decode("utf-8"))
+        if not vokabeln_gueltig(daten):
+            return False
+        datei = datenordner() / "vokabeln.json"
+        neu = json.dumps(daten, ensure_ascii=False, indent=1)
+        if datei.exists() and datei.read_text(encoding="utf-8") == neu:
+            return False
+        datei.write_text(neu, encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def neueste_version():
+    """Liest die Version aus der Weiterleitung von /releases/latest. Das ist
+    eine gewöhnliche Webanfrage und läuft damit in kein API-Limit."""
+    class OhneWeiterleitung(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    oeffner = urllib.request.build_opener(OhneWeiterleitung)
+    anfrage = urllib.request.Request(RELEASE_URL, headers={"User-Agent": "Voci"})
+    try:
+        with oeffner.open(anfrage, timeout=NETZ_TIMEOUT) as antwort:
+            ziel = antwort.geturl()
+    except urllib.error.HTTPError as fehler:
+        if fehler.code not in (301, 302, 303, 307, 308):
+            raise
+        ziel = fehler.headers.get("Location", "")
+    return ziel.rstrip("/").rsplit("/", 1)[-1] or None
+
+
+def installation():
+    """Was müsste ein Update ersetzen - eine Datei oder ein ganzer Ordner?"""
+    if "__compiled__" in globals():                  # mit Nuitka gebaut
+        pfad = pathlib.Path(sys.argv[0]).resolve()
+        if os.environ.get("NUITKA_ONEFILE_PARENT"):
+            return "einzeldatei", pfad
+        for eltern in pfad.parents:
+            if eltern.suffix == ".app":
+                return "ordner", eltern
+        return "ordner", pfad.parent
+    if getattr(sys, "frozen", False):                # mit PyInstaller gebaut
+        pfad = pathlib.Path(sys.executable).resolve()
+        for eltern in pfad.parents:
+            if eltern.suffix == ".app":
+                return "ordner", eltern
+        return "ordner", pfad.parent
+    return "einzeldatei", pathlib.Path(__file__).resolve()
+
+
+def asset_name(art):
+    """Welche Datei aus dem Release passt zu dieser Installation?"""
+    if os.environ.get("VOCI_ASSET"):                 # nur für Tests
+        return os.environ["VOCI_ASSET"]
+    if art == "einzeldatei":
+        if IS_WIN and "__compiled__" in globals():
+            return "Voci.exe"
+        return "Voci.pyw"
+    if IS_WIN:
+        return "Voci-Windows-Ordner.zip"
+    if IS_MAC:
+        return "Voci-macOS.zip"
+    return None                                      # dafür gibt es kein Release
+
+
+def update_vorbereiten(art, ziel, arbeitsordner):
+    """Lädt die passende Datei und legt daneben, was nachher an die Stelle von
+    *ziel* rücken soll. Es wird noch nichts ersetzt."""
+    name = asset_name(art)
+    if not name:
+        raise RuntimeError("für diese Fassung gibt es kein Update")
+    rohdaten = _hole("%s/%s" % (DOWNLOAD_URL, name), timeout=120)
+    arbeitsordner = pathlib.Path(arbeitsordner)
+
+    if not name.endswith(".zip"):
+        neu = arbeitsordner / ziel.name
+        neu.write_bytes(rohdaten)
+        if art == "einzeldatei" and not IS_WIN:
+            neu.chmod(0o755)
+        return neu
+
+    paket = arbeitsordner / name
+    paket.write_bytes(rohdaten)
+    entpackt = arbeitsordner / "entpackt"
+    with zipfile.ZipFile(paket) as archiv:
+        archiv.extractall(entpackt)
+    inhalt = [p for p in entpackt.iterdir() if not p.name.startswith("__MACOSX")]
+    if len(inhalt) != 1 or not inhalt[0].is_dir():
+        raise RuntimeError("unerwarteter Inhalt im Archiv")
+    neu = inhalt[0]
+    if not any(neu.rglob("Voci*")):
+        raise RuntimeError("im Archiv fehlt das Programm")
+    for datei in neu.rglob("*"):                     # Rechte gehen im ZIP verloren
+        if datei.is_file() and (datei.suffix in ("", ".sh") or "MacOS" in datei.parts):
+            try:
+                datei.chmod(0o755)
+            except OSError:
+                pass
+    return neu
+
+
+def tausch_starten(ziel, neu, startbefehl):
+    """Startet ein kleines Hilfsprogramm, das wartet, bis Voci beendet ist, und
+    dann tauscht. Ein laufendes Programm kann sich nicht selbst ersetzen.
+    Die alte Fassung wird erst weggeräumt, wenn die neue an Ort und Stelle ist -
+    schlägt der Tausch fehl, kommt die alte zurück."""
+    pid = os.getpid()
+    sicherung = "%s.alt" % ziel
+    if IS_WIN:
+        skript = pathlib.Path(neu).parent / "voci_update.cmd"
+        skript.write_text(
+            "@echo off\r\n"
+            ":warten\r\n"
+            'tasklist /fi "PID eq %d" 2>nul | find "%d" >nul\r\n'
+            "if not errorlevel 1 (\r\n"
+            "  timeout /t 1 /nobreak >nul\r\n"
+            "  goto warten\r\n"
+            ")\r\n"
+            'if exist "%s" rmdir /s /q "%s" 2>nul\r\n'
+            'if exist "%s" del /q "%s" 2>nul\r\n'
+            'move "%s" "%s" >nul || exit /b 1\r\n'
+            'move "%s" "%s" >nul || (move "%s" "%s" >nul & exit /b 1)\r\n'
+            'start "" %s\r\n'
+            % (pid, pid, sicherung, sicherung, sicherung, sicherung,
+               ziel, sicherung, neu, ziel, sicherung, ziel, startbefehl),
+            encoding="utf-8")
+        subprocess.Popen(["cmd", "/c", str(skript)], cwd=str(skript.parent),
+                         creationflags=0x08000000)   # ohne Konsolenfenster
+    else:
+        skript = pathlib.Path(neu).parent / "voci_update.sh"
+        skript.write_text(
+            "#!/bin/sh\n"
+            "while kill -0 %d 2>/dev/null; do sleep 0.5; done\n"
+            'rm -rf "%s"\n'
+            'mv "%s" "%s" || exit 1\n'
+            'mv "%s" "%s" || { mv "%s" "%s"; exit 1; }\n'
+            'rm -rf "%s"\n'
+            "%s &\n"
+            % (pid, sicherung, ziel, sicherung, neu, ziel, sicherung, ziel,
+               sicherung, startbefehl),
+            encoding="utf-8")
+        skript.chmod(0o755)
+        subprocess.Popen(["/bin/sh", str(skript)], cwd=str(skript.parent),
+                         start_new_session=True)
+
+
+def startbefehl_fuer(art, ziel):
+    if art == "ordner":
+        if IS_MAC and str(ziel).endswith(".app"):
+            return 'open "%s"' % ziel
+        exe = pathlib.Path(ziel) / ("Voci.exe" if IS_WIN else "Voci")
+        return '"%s"' % exe
+    if str(ziel).endswith(".pyw"):
+        return '"%s" "%s"' % (sys.executable, ziel)
+    return '"%s"' % ziel
+
+
 class Voci:
     def __init__(self):
         self.root = tk.Tk()
@@ -197,7 +427,8 @@ class Voci:
         self.font_tiny = tkfont.Font(family=familie, size=-self.tiny_px)
 
         # Zustand
-        self.deck = list(range(len(VOCAB)))
+        self.vocab = lade_vokabeln()
+        self.deck = list(range(len(self.vocab)))
         random.shuffle(self.deck)
         self.pos = 0
         self.thema = "hell"
@@ -212,6 +443,10 @@ class Voci:
         self.countdown_frac = None
         self.was_active = True
         self.seen_focus = False      # hat die Plattform je Fokus gemeldet?
+        self.update_version = None   # gefundene neuere Version
+        self.update_status = None    # Text für den Hinweis auf der Karte
+        self.update_fertig = None    # (art, ziel, neu) - bereit zum Tausch
+        self._letzter_hinweis = (None, None)
         self.imgcache = {}
         self._wrapcache = {}
 
@@ -231,7 +466,69 @@ class Voci:
 
         self.root.lift()
         self.draw()
+        self._starte_hintergrund()
+        self._ui_takt()
         self.root.mainloop()
+
+    # ------------------------------------------------------------ Updates
+    def _starte_hintergrund(self):
+        """Netzarbeit läuft in Hintergrundfäden und darf nie etwas umwerfen -
+        sie setzt nur Werte, gezeichnet wird im UI-Takt."""
+        threading.Thread(target=self._pruefe_wortliste, daemon=True).start()
+        if VERSION != "dev" or TESTMODUS:
+            threading.Thread(target=self._pruefe_version, daemon=True).start()
+
+    def _pruefe_wortliste(self):
+        try:
+            vokabeln_auffrischen()
+        except Exception:
+            pass
+
+    def _pruefe_version(self):
+        try:
+            neu = neueste_version()
+        except Exception:
+            return
+        if neu and neu != VERSION:
+            self.update_version = neu
+
+    def _ui_takt(self):
+        """Einziger Ort, an dem Ergebnisse der Hintergrundfäden ins Bild
+        kommen - Tk verträgt keine Zugriffe aus fremden Fäden."""
+        if self.update_fertig:
+            self._tauschen()
+            return
+        stand = (self.update_version, self.update_status)
+        if stand != self._letzter_hinweis:
+            self._letzter_hinweis = stand
+            self.draw()
+        self.root.after(500, self._ui_takt)
+
+    def update_starten(self):
+        if not self.update_version or self.update_status:
+            return
+        self.update_status = "lädt"
+        threading.Thread(target=self._update_laden, daemon=True).start()
+
+    def _update_laden(self):
+        try:
+            art, ziel = installation()
+            arbeitsordner = tempfile.mkdtemp(prefix="voci-update-")
+            neu = update_vorbereiten(art, ziel, arbeitsordner)
+            self.update_fertig = (art, ziel, neu)
+        except Exception:
+            self.update_status = "fehlgeschlagen"
+
+    def _tauschen(self):
+        art, ziel, neu = self.update_fertig
+        self.update_fertig = None
+        try:
+            tausch_starten(ziel, neu, startbefehl_fuer(art, ziel))
+        except Exception:
+            self.update_status = "fehlgeschlagen"
+            self.root.after(500, self._ui_takt)
+            return
+        self.root.destroy()
 
     # ------------------------------------------------------------ Plattform
     def _setup_transparency(self):
@@ -322,7 +619,7 @@ class Voci:
     # ------------------------------------------------------------ Wortlogik
     @property
     def word(self):
-        return VOCAB[self.deck[self.pos]]
+        return self.vocab[self.deck[self.pos]]
 
     def remember(self):
         """Wort merken – nur Wortwechsel landen in der Historie, Flips und der
@@ -417,8 +714,11 @@ class Voci:
         self.draw()
 
     def on_key(self, event):
-        if event.keysym.lower() == "d":
+        taste = event.keysym.lower()
+        if taste == "d":
             self.toggle_thema()
+        elif taste == "u":
+            self.update_starten()
 
     # ------------------------------------------------------------ Layout
     def buttons(self):
@@ -487,6 +787,12 @@ class Voci:
                 c.create_text(x, by, text=self.start_side.upper(),
                               font=self.font_tiny, fill=hexc(self.farbe("fg")))
 
+        hinweis = self.update_hinweis()
+        if hinweis and rest and not self.countdown_frac:
+            self.font_tiny.configure(size=-self.tiny_px)
+            c.create_text(cx, h - 14 * self.k, text=hinweis,
+                          font=self.font_tiny, fill=self.farbe("rand"))
+
         if self.countdown_frac and rest:
             bw = (w - 2 * (self.pad + self.br + 12 * self.k)) * self.countdown_frac
             if bw > 0:
@@ -546,6 +852,15 @@ class Voci:
             if part:
                 out.append(part)
         return out
+
+    def update_hinweis(self):
+        if self.update_status == "lädt":
+            return "Update wird geladen …"
+        if self.update_status == "fehlgeschlagen":
+            return "Update fehlgeschlagen"
+        if self.update_version:
+            return "Update verfügbar · Taste u"
+        return None
 
     def word_size(self, text):
         """Schriftgrösse in Pixeln – plattformunabhängig, weil negative
