@@ -112,9 +112,28 @@ zählen nicht als Schritt. Das vorherige Wort erscheint in der Sprache, die
 gerade angezeigt wird: Ist man gerade auf DE, kommt es auf DE, egal wie man es
 verlassen hat. Maximal 10 Wörter; ohne Historie ist der Knopf ausgeblendet.
 
-Beim Flip staucht sich die ganze Karte – Knöpfe und Text gehen mit. Die Zeilen
-des Textes stehen dabei fest, es skaliert nur die Schrift, damit nichts
-umspringt.
+### Animationen
+
+Jede Aktion hat ihre eigene Bewegung:
+
+- **Flip:** Die Karte dreht sich perspektivisch um die Hochachse; auf halbem
+  Weg wechselt das Wort. Die zweite Hälfte dreht von −90° zurück, sonst stünde
+  die Schrift spiegelverkehrt.
+- **Wortwechsel:** Das alte Wort zieht zur Seite ab und das neue kommt von der
+  anderen Seite herein — Richtung passend zu vor oder zurück. Der Rahmen mit
+  den Knöpfen bleibt dabei ruhig stehen, der Text wird am Kartenrand
+  beschnitten.
+- **Wertung (c/v/b):** Die Farbe schwillt an und klingt wieder ab, die Karte
+  poppt kurz auf, dann gleitet das nächste Wort herein.
+- **Knöpfe:** Der graue Kreis wächst beim Draufzeigen weich ein statt hart
+  umzuspringen; der Schliessknopf wandert dabei ins macOS-Rot.
+- **Schalter:** Der Knauf gleitet und wird beim Klick kurz breiter, die Farbe
+  wandert von Grau nach Grün.
+- **Segmentregler:** Der helle Reiter gleitet zum neuen Segment.
+- **Fenster:** Karte, Menü und Wörterliste blenden beim Öffnen ein und fahren
+  leicht heran.
+
+Alle Bewegungen lassen sich im Menü über *Flip-Animation* abschalten.
 
 Das Fenster ist **immer im Vordergrund**, hat keinen Titel, kein Minimieren und
 kein Maximieren, weisse Karte mit schwarzem Text in Graustufen, abgerundete Ecken

@@ -41,7 +41,8 @@ try:
     from PySide6.QtCore import (Qt, QTimer, QRectF, QPointF, QVariantAnimation,
                                 QEasingCurve, QSize)
     from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication,
-                               QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor)
+                               QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
+                               QTransform)
     from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
                                    QMenu, QPushButton, QScrollArea, QVBoxLayout,
                                    QWidget)
@@ -440,6 +441,42 @@ def startbefehl_fuer(art, ziel):
 # ---------------------------------------------------------------- Qt-Grundlagen
 SCHATTEN = 22                     # weicher Rand um jedes Panel
 RADIUS = 20                       # Eckenradius der Karten
+TAKT_MS = 16                      # ~60 Bilder je Sekunde für weiche Übergänge
+
+
+def strecke(wert, ziel, tempo):
+    """Nähert einen Wert seinem Ziel an - Grundlage aller weichen Übergänge."""
+    if abs(ziel - wert) < 0.002:
+        return ziel
+    return wert + (ziel - wert) * tempo
+
+
+def kurve(t):
+    """Sanftes Ein- und Ausschwingen (cubic in/out)."""
+    return 4 * t ** 3 if t < 0.5 else 1 - (-2 * t + 2) ** 3 / 2
+
+
+class Ablauf(QVariantAnimation):
+    """Ein Animationsdurchlauf von 0 nach 1 mit optionalem Wendepunkt."""
+
+    def __init__(self, eltern, dauer, schritt, mitte=None, fertig=None,
+                 mitte_bei=0.5):
+        super().__init__(eltern)
+        self.setDuration(dauer)
+        self.setStartValue(0.0)
+        self.setEndValue(1.0)
+        self.setEasingCurve(QEasingCurve.Type.Linear)
+        self._mitte, self._mitte_bei = mitte, mitte_bei
+        self._gewendet = False
+        self.valueChanged.connect(lambda w: self._takt(w, schritt))
+        if fertig:
+            self.finished.connect(fertig)
+
+    def _takt(self, wert, schritt):
+        if (self._mitte and not self._gewendet and wert >= self._mitte_bei):
+            self._gewendet = True
+            self._mitte()
+        schritt(wert)
 
 
 def basisfont(pixel, fett=False):
@@ -543,6 +580,23 @@ class Panel(QWidget):
         else:
             self.app.karte.keyPressEvent(e)
 
+    def einblenden(self):
+        """Panel gleitet leicht hoch und blendet ein."""
+        self.setWindowOpacity(0.0)
+        self._ziel_y = self.y()
+        self.move(self.x(), self._ziel_y + 12)
+
+        def schritt(w):
+            t = kurve(w)
+            self.setWindowOpacity(t)
+            self.move(self.x(), int(self._ziel_y + 12 * (1 - t)))
+
+        def fertig():
+            self.setWindowOpacity(1.0)
+            self.move(self.x(), self._ziel_y)
+        self._anim = Ablauf(self, 220, schritt, fertig=fertig)
+        self._anim.start()
+
     def neben_karte(self):
         k = self.app.karte.frameGeometry()
         schirm = self.screen().availableGeometry() if self.screen() else None
@@ -553,28 +607,43 @@ class Panel(QWidget):
 
 
 class Schalter(QWidget):
-    """Apple-Kippschalter: farbige Pille mit weissem Knauf."""
+    """Apple-Kippschalter: der Knauf gleitet, die Farbe wandert mit."""
 
     def __init__(self, app, wert, cb):
         super().__init__()
         self.app, self.wert, self.cb = app, wert, cb
         self.setFixedSize(40, 24)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lage = 1.0 if wert else 0.0
+        self.druck = 0.0                  # Knauf wird beim Klick kurz breiter
+        self._takt = QTimer(self)
+        self._takt.timeout.connect(self._schritt)
+
+    def _schritt(self):
+        ziel = 1.0 if self.wert else 0.0
+        self.lage = strecke(self.lage, ziel, 0.28)
+        self.druck = strecke(self.druck, 0.0, 0.2)
+        self.update()
+        if self.lage == ziel and self.druck == 0.0:
+            self._takt.stop()
 
     def paintEvent(self, _):
         t = THEMEN[self.app.thema]
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(qfarbe(t["gruen"] if self.wert else t["grau"]))
+        p.setBrush(qfarbe(blend(t["grau"], t["gruen"], self.lage)))
         p.drawRoundedRect(QRectF(0, 1, 40, 22), 11, 11)
         p.setBrush(QColor("white"))
-        kx = 40 - 11 if self.wert else 11
-        p.drawEllipse(QPointF(kx, 12), 9, 9)
+        kx = 11 + self.lage * 18
+        breit = 9 + 2.5 * self.druck
+        p.drawRoundedRect(QRectF(kx - breit, 3, 2 * breit, 18), 9, 9)
 
     def mouseReleaseEvent(self, _):
         self.wert = not self.wert
-        self.update()
+        self.druck = 1.0
+        if not self._takt.isActive():
+            self._takt.start(TAKT_MS)
         self.cb(self.wert)
 
 
@@ -593,12 +662,32 @@ class Segmente(QWidget):
         if not dehnen:
             self.setFixedWidth(sum(self._breiten))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.lage = float(self._index(wert))
+        self._takt = QTimer(self)
+        self._takt.timeout.connect(self._schritt)
 
     def _spalten(self):
         if self.dehnen:
             teil = self.width() / len(self.optionen)
             return [teil] * len(self.optionen)
         return self._breiten
+
+    def _index(self, wert):
+        for n, (w, _) in enumerate(self.optionen):
+            if w == wert:
+                return n
+        return 0
+
+    def _kachel(self, index):
+        spalten = self._spalten()
+        return sum(spalten[:index]), spalten[index]
+
+    def _schritt(self):
+        ziel = float(self._index(self.wert))
+        self.lage = strecke(self.lage, ziel, 0.3)
+        self.update()
+        if self.lage == ziel:
+            self._takt.stop()
 
     def paintEvent(self, _):
         t = THEMEN[self.app.thema]
@@ -607,15 +696,24 @@ class Segmente(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(qfarbe(t["gruppe"]))
         p.drawRoundedRect(QRectF(0, 0, self.width(), 26), 13, 13)
+
+        # Der helle Reiter gleitet zwischen den Segmenten
+        unten, oben = int(self.lage), min(int(self.lage) + 1,
+                                          len(self.optionen) - 1)
+        anteil = self.lage - unten
+        x0, b0 = self._kachel(unten)
+        x1, b1 = self._kachel(oben)
+        rx = x0 + (x1 - x0) * anteil
+        rb = b0 + (b1 - b0) * anteil
+        p.setBrush(qfarbe(t["bg"]))
+        p.setPen(QPen(qfarbe(t["rand"]), 1))
+        p.drawRoundedRect(QRectF(rx + 2, 2, rb - 4, 22), 11, 11)
+
         x = 0.0
-        for (wert, text), b in zip(self.optionen, self._spalten()):
-            if wert == self.wert:
-                p.setBrush(qfarbe(t["bg"]))
-                p.setPen(QPen(qfarbe(t["rand"]), 1))
-                p.drawRoundedRect(QRectF(x + 2, 2, b - 4, 22), 11, 11)
-                p.setPen(Qt.PenStyle.NoPen)
+        for n, ((wert, text), b) in enumerate(zip(self.optionen, self._spalten())):
+            naehe = max(0.0, 1.0 - abs(self.lage - n))
             p.setPen(qfarbe(t["fg"]))
-            p.setFont(self.font_f if wert == self.wert else self.font_n)
+            p.setFont(self.font_f if naehe > 0.5 else self.font_n)
             p.drawText(QRectF(x, 0, b, 26), Qt.AlignmentFlag.AlignCenter, text)
             p.setPen(Qt.PenStyle.NoPen)
             x += b
@@ -626,7 +724,8 @@ class Segmente(QWidget):
             if x <= e.position().x() < x + b:
                 if wert != self.wert:
                     self.wert = wert
-                    self.update()
+                    if not self._takt.isActive():
+                        self._takt.start(TAKT_MS)
                     self.cb(wert)
                 return
             x += b
@@ -1019,13 +1118,23 @@ class Karte(QWidget):
         self.resize(400 + 2 * SCHATTEN, 250 + 2 * SCHATTEN)
         self.move(140, 140)
 
-        self.scale = 1.0
+        self.scale = 1.0            # Restbreite beim Flip (1 = voll)
+        self.winkel = 0.0           # Drehung um die Hochachse, echter 3D-Flip
+        self.versatz = 0.0          # seitliches Gleiten beim Wortwechsel
+        self.inhalt = 1.0           # Deckkraft der ganzen Karte (Flip)
+        self.wort_alpha = 1.0       # Deckkraft nur des Worts (Gleiten)
+        self.puls = 0.0             # kurzes Aufpoppen nach einer Wertung
+        self.blitz_staerke = 0.0    # Farbanteil des Wertungs-Blitzes
+        self.start_anim = 0.0       # Einblenden beim Programmstart
         self.hover = None
+        self.hover_werte = {}       # Knopf -> 0..1, weich nachgeführt
         self._presse = None
         self._zieh = None
         self._resize = None
         self._wrapcache = {}
         self.anim = None
+        self._hovertakt = QTimer(self)
+        self._hovertakt.timeout.connect(self._hover_schritt)
 
     # ---- Geometrie
     def karte_rect(self):
@@ -1040,19 +1149,73 @@ class Karte(QWidget):
                 ("back", r.x() + pad, r.bottom() - pad, kr),
                 ("next", r.right() - pad, r.bottom() - pad, kr))
 
+    # ---- weiche Übergänge
+    def _hover_schritt(self):
+        ruhig = True
+        for tag, _, _, _ in self.buttons():
+            ziel = 1.0 if self.hover == tag else 0.0
+            wert = strecke(self.hover_werte.get(tag, 0.0), ziel, 0.25)
+            self.hover_werte[tag] = wert
+            if wert != ziel:
+                ruhig = False
+        self.update()
+        if ruhig:
+            self._hovertakt.stop()
+
+    def _hover_wecken(self):
+        if not self._hovertakt.isActive():
+            self._hovertakt.start(TAKT_MS)
+
+    def einblenden(self):
+        """Karte fährt beim Start sanft heran."""
+        self.start_anim = 0.0
+
+        def schritt(w):
+            self.start_anim = kurve(w)
+            self.update()
+        self.anim_start = Ablauf(self, 420, schritt,
+                                 fertig=lambda: setattr(self, "start_anim", 1.0))
+        self.anim_start.start()
+
     # ---- Zeichnen
     def paintEvent(self, _):
         a = self.app
         t = THEMEN[a.thema]
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         voll = self.karte_rect()
-        halb = max(2.0, voll.width() / 2 * max(self.scale, 0.02))
-        cx = voll.center().x()
+        cx, cy = voll.center().x(), voll.center().y()
+
+        # Beim Start heranfahren
+        if self.start_anim < 1.0:
+            p.setOpacity(max(0.0, self.start_anim))
+            s0 = 0.92 + 0.08 * self.start_anim
+            p.translate(cx, cy + (1 - self.start_anim) * 14)
+            p.scale(s0, s0)
+            p.translate(-cx, -cy)
+
+        # Wertung lässt die Karte kurz aufpoppen (der Wortwechsel bewegt
+        # weiter unten nur den Text, damit das Fenster ruhig stehen bleibt)
+        if self.puls:
+            s1 = 1.0 + 0.045 * self.puls
+            p.translate(cx, cy)
+            p.scale(s1, s1)
+            p.translate(-cx, -cy)
+
+        # Echter Flip: Drehung um die Hochachse mit Perspektive
+        if self.winkel:
+            dreh = QTransform()
+            dreh.translate(cx, cy)
+            dreh.rotate(self.winkel, Qt.Axis.YAxis)
+            dreh.translate(-cx, -cy)
+            p.setTransform(dreh, True)
+
+        halb = voll.width() / 2 * max(self.scale, 0.02)
         rect = QRectF(cx - halb, voll.y(), 2 * halb, voll.height())
 
-        # Schatten nur im Ruhezustand (waehrend des Flips flackert er sonst)
-        if self.scale > 0.999:
+        # Schatten nur im Ruhezustand (waehrend der Bewegung flackert er sonst)
+        if self.scale > 0.999 and not self.winkel:
             grund = qfarbe(t["schatten"])
             for i in range(SCHATTEN - 4, 0, -2):
                 w = QColor(grund)
@@ -1061,34 +1224,52 @@ class Karte(QWidget):
                 p.setBrush(w)
                 p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2),
                                   RADIUS + i, RADIUS + i)
-        flaeche = a.blitz or t["bg"]
+        flaeche = (blend(t["bg"], a.blitz, self.blitz_staerke)
+                   if a.blitz else t["bg"])
         p.setBrush(qfarbe(flaeche))
         p.setPen(QPen(qfarbe(t["rand"]), 1))
         p.drawRoundedRect(rect, RADIUS, RADIUS)
 
-        if self.scale <= 0.12:
+        if self.scale <= 0.12 or self.inhalt <= 0.02:
             return
+        p.setOpacity(p.opacity() * self.inhalt)
 
-        # Wort: Zeilen stehen fest, nur die Schrift skaliert mit dem Flip
         zeilen, groesse = self.wrapped(a.word[a.side])
-        f = basisfont(max(1, groesse * self.scale))
-        p.setFont(f)
+        p.setFont(basisfont(max(1, groesse)))
         p.setPen(qfarbe(t["fg"]))
-        p.drawText(rect.adjusted(20, 20, -20, -20),
-                   Qt.AlignmentFlag.AlignCenter, zeilen)
+        textfeld = rect.adjusted(20, 20, -20, -20)
+        p.setOpacity(p.opacity() * self.wort_alpha)
+        if self.versatz:
+            # Der Text zieht durch die Karte; ausserhalb wird abgeschnitten,
+            # damit nichts über den Rand hinausläuft.
+            beschnitt = QPainterPath()
+            beschnitt.addRoundedRect(rect, RADIUS, RADIUS)
+            p.save()
+            p.setClipPath(beschnitt)
+            p.translate(self.versatz * rect.width(), 0)
+            p.drawText(textfeld, Qt.AlignmentFlag.AlignCenter, zeilen)
+            p.restore()
+        else:
+            p.drawText(textfeld, Qt.AlignmentFlag.AlignCenter, zeilen)
 
-        ruhe = self.scale > 0.999
+        p.setOpacity(self.inhalt if self.start_anim >= 1.0
+                     else self.inhalt * self.start_anim)
+        ruhe = self.scale > 0.999 and abs(self.winkel) < 1
         for tag, bx, by, r in self.buttons():
             if tag == "back" and not a.history:
                 continue
             x = cx + (bx - cx) * self.scale
-            heiss = ruhe and self.hover == tag
-            if heiss:
+            hv = self.hover_werte.get(tag, 0.0) if ruhe else 0.0
+            if hv > 0.01:
                 p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(qfarbe(MAC_ROT if tag == "close" else t["hover"]))
-                p.drawEllipse(QPointF(x, by), r, r)
-            stift = (qfarbe(MAC_ROT_SYMBOL) if heiss and tag == "close"
-                     else qfarbe(t["zweit"] if tag == "lang" else t["fg"]))
+                p.setBrush(qfarbe(blend(t["bg"],
+                                        MAC_ROT if tag == "close" else t["hover"],
+                                        hv)))
+                p.drawEllipse(QPointF(x, by), r * (0.82 + 0.18 * hv),
+                              r * (0.82 + 0.18 * hv))
+            grund = qfarbe(t["zweit"] if tag == "lang" else t["fg"])
+            stift = (qfarbe(blend(t["fg"], MAC_ROT_SYMBOL, hv))
+                     if tag == "close" else grund)
             p.setPen(QPen(stift, 1.7, c=Qt.PenCapStyle.RoundCap))
             for (x1, y1, x2, y2) in icon_segs(tag, r):
                 p.drawLine(QPointF(x + x1 * self.scale, by + y1),
@@ -1145,39 +1326,94 @@ class Karte(QWidget):
             basis *= 0.87
         return max(9, int(basis))
 
-    # ---- Flip-Animation
-    def animiere(self, commit):
+    # ---- Bewegungen
+    def _ohne_animation(self, commit):
+        commit()
+        self.scale, self.winkel, self.versatz = 1.0, 0.0, 0.0
+        self.inhalt, self.wort_alpha, self.puls = 1.0, 1.0, 0.0
+        self.app.animating = False
+        self.update()
+
+    def drehe(self, commit):
+        """Echter Flip: Die Karte dreht sich um die Hochachse, auf halbem Weg
+        wechselt der Inhalt. Die zweite Hälfte läuft von -90 zurück, sonst
+        stünde die Schrift spiegelverkehrt."""
         a = self.app
         if a.animating:
             return
         if not a.einst["flip_animation"]:
-            commit()
-            self.scale = 1.0
-            self.update()
+            self._ohne_animation(commit)
             return
         a.animating = True
-        anim = QVariantAnimation(self)
-        anim.setDuration(240)
-        anim.setStartValue(0.0)
-        anim.setEndValue(2.0)
-        anim.setEasingCurve(QEasingCurve.Type.InOutSine)
-        zustand = {"mitte": False}
 
-        def schritt(wert):
-            if wert >= 1.0 and not zustand["mitte"]:
-                zustand["mitte"] = True
-                commit()
-            self.scale = abs(wert - 1.0)
+        def schritt(w):
+            t = kurve(w)
+            self.winkel = t * 180.0
+            if self.winkel > 90:
+                self.winkel -= 180.0
+            # kurz vor der Kante ausblenden, dahinter wieder auf
+            self.inhalt = min(1.0, abs(math.cos(math.radians(t * 180))) * 2.2)
             self.update()
 
         def fertig():
-            self.scale = 1.0
+            self.winkel, self.inhalt = 0.0, 1.0
             a.animating = False
             self.update()
-        anim.valueChanged.connect(schritt)
-        anim.finished.connect(fertig)
-        anim.start()
-        self.anim = anim
+
+        self.anim = Ablauf(self, 400, schritt, mitte=commit, fertig=fertig)
+        self.anim.start()
+
+    def gleite(self, commit, richtung):
+        """Wortwechsel: das alte Wort zieht zur Seite ab, das neue kommt von
+        der anderen Seite herein - Richtung passend zu vor/zurück."""
+        a = self.app
+        if a.animating:
+            return
+        if not a.einst["flip_animation"]:
+            self._ohne_animation(commit)
+            return
+        a.animating = True
+
+        def schritt(w):
+            if w < 0.5:
+                t = kurve(w * 2)
+                self.versatz = -richtung * 0.75 * t
+                self.wort_alpha = 1.0 - t
+            else:
+                t = kurve((w - 0.5) * 2)
+                self.versatz = richtung * 0.75 * (1.0 - t)
+                self.wort_alpha = t
+            self.update()
+
+        def fertig():
+            self.versatz, self.wort_alpha = 0.0, 1.0
+            a.animating = False
+            self.update()
+
+        self.anim = Ablauf(self, 320, schritt, mitte=commit, fertig=fertig)
+        self.anim.start()
+
+    def pulse(self, dann):
+        """Wertung: Farbe schwillt an, die Karte poppt kurz auf, dann weiter."""
+        if not self.app.einst["flip_animation"]:
+            self.blitz_staerke = 1.0
+            self.update()
+            QTimer.singleShot(BLITZ_MS, dann)
+            return
+
+        def schritt(w):
+            self.blitz_staerke = min(1.0, w * 3) if w < 0.7 else \
+                max(0.0, 1.0 - (w - 0.7) / 0.3)
+            self.puls = math.sin(min(1.0, w * 1.6) * math.pi)
+            self.update()
+
+        def fertig():
+            self.blitz_staerke, self.puls = 0.0, 0.0
+            self.update()
+            dann()
+
+        self.anim_puls = Ablauf(self, 300, schritt, fertig=fertig)
+        self.anim_puls.start()
 
     # ---- Maus
     def _kante(self, pos):
@@ -1261,7 +1497,7 @@ class Karte(QWidget):
                            else Qt.CursorShape.ArrowCursor)
         if neu != self.hover:
             self.hover = neu
-            self.update()
+            self._hover_wecken()
 
     def mouseReleaseEvent(self, e):
         resize, self._resize = self._resize, None
@@ -1347,6 +1583,7 @@ class Voci:
         if not self.einst["immer_vorne"]:
             self._topmost(False)
         self.karte.show()
+        self.karte.einblenden()
 
         qapp.applicationStateChanged.connect(self._app_zustand)
         self._takt = QTimer()
@@ -1418,7 +1655,7 @@ class Voci:
             self.idx = neu
             self.flips = 0
             self.side = self.start_side
-        self.karte.animiere(commit)
+        self.karte.gleite(commit, +1)
 
     def go_back(self):
         """Ein Wort zurück, in der gerade sichtbaren Sprache."""
@@ -1431,7 +1668,7 @@ class Voci:
         def commit():
             self.idx = eintrag["idx"]
             self.flips = 0
-        self.karte.animiere(commit)
+        self.karte.gleite(commit, -1)
 
     def flip(self):
         if self.animating or self.blitz:
@@ -1441,7 +1678,7 @@ class Voci:
         def commit():
             self.side = "de" if self.side == "fr" else "fr"
             self.flips += 1
-        self.karte.animiere(commit)
+        self.karte.drehe(commit)
 
     def bewerte(self, taste):
         """c/v/b: Faktor anpassen, Karte aufleuchten lassen, weiter. Nach
@@ -1454,8 +1691,7 @@ class Voci:
         self.setze_faktor(self.idx, self.faktor(self.idx) - alter_anteil + delta)
         self.undo_delta = delta
         self.blitz = WERTUNG_BLITZ[taste]
-        self.karte.update()
-        QTimer.singleShot(BLITZ_MS, self._blitz_ende)
+        self.karte.pulse(self._blitz_ende)
 
     def _blitz_ende(self):
         self.blitz = None
@@ -1471,7 +1707,7 @@ class Voci:
 
             def commit():
                 self.side = self.start_side
-            self.karte.animiere(commit)
+            self.karte.drehe(commit)
         else:
             self.karte.update()
 
@@ -1535,6 +1771,7 @@ class Voci:
             return
         self.menu = MenuFenster(self)
         self.menu.show()
+        self.menu.einblenden()
 
     def menu_neu_aufbauen(self):
         if self.menu and self.menu.isVisible():
@@ -1557,6 +1794,7 @@ class Voci:
             return
         self.liste = ListeFenster(self)
         self.liste.show()
+        self.liste.einblenden()
 
     # ---- Updates (Netz in Fäden, UI im Takt)
     def _starte_hintergrund(self):
