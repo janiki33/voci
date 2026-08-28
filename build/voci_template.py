@@ -39,7 +39,7 @@ import zipfile
 
 try:
     from PySide6.QtCore import (Qt, QTimer, QRectF, QPointF, QVariantAnimation,
-                                QEasingCurve, QSize)
+                                QEasingCurve, QSize, QEvent, QObject)
     from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication,
                                QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
                                QTransform)
@@ -194,7 +194,6 @@ STANDARD_EINSTELLUNGEN = {
     "thema": "hell",
     "startsprache": "fr",
     "pfeil_knoepfe": True,        # ← → Knöpfe auf der Karte zeigen
-    "pfeiltasten": True,          # mit Pfeil links/rechts navigieren
     "auto_weiter": True,          # beim Raustabben automatisch weiter
     "auto_dauer": 5,              # Sekunden bis zum Auto-Weiter
     "flip_animation": True,
@@ -578,8 +577,8 @@ class Panel(QWidget):
     def keyPressEvent(self, e):
         if e.key() == Qt.Key.Key_Escape:
             self.close()
-        else:
-            self.app.karte.keyPressEvent(e)
+        elif not self.app.taste(e.key()):
+            super().keyPressEvent(e)
 
     def einblenden(self):
         """Panel gleitet leicht hoch und blendet ein."""
@@ -858,8 +857,7 @@ class MenuFenster(Panel):
 
         def schalter(name, text, wert, cb):
             s = Schalter(a, wert, lambda _an: cb())
-            g = g1 if name in ("dark", "vorne", "knoepfe", "pfeile",
-                               "flip") else g2
+            g = g1 if name in ("dark", "vorne", "knoepfe", "flip") else g2
             g.zeile(text, s)
             self.regionen[name] = cb
 
@@ -869,8 +867,6 @@ class MenuFenster(Panel):
         schalter("knoepfe", "Pfeil-Knöpfe auf der Karte",
                  a.einst["pfeil_knoepfe"],
                  lambda: a.einstellung_kippen("knoepfe", "pfeil_knoepfe"))
-        schalter("pfeile", "Pfeiltasten-Navigation", a.einst["pfeiltasten"],
-                 lambda: a.einstellung_kippen("pfeile", "pfeiltasten"))
         schalter("flip", "Flip-Animation", a.einst["flip_animation"],
                  lambda: a.einstellung_kippen("flip", "flip_animation"))
         wurzel.addWidget(g1)
@@ -1119,6 +1115,7 @@ class Karte(QWidget):
                             | Qt.WindowType.WindowStaysOnTopHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumSize(280 + 2 * SCHATTEN, 170 + 2 * SCHATTEN)
         self.resize(400 + 2 * SCHATTEN, 250 + 2 * SCHATTEN)
         self.move(140, 140)
@@ -1453,6 +1450,7 @@ class Karte(QWidget):
 
     def mousePressEvent(self, e):
         self.app.set_active(True)
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
         pos = e.position()
         kante = self._kante(pos)
         if kante:
@@ -1531,30 +1529,34 @@ class Karte(QWidget):
             a.flip()
 
     def keyPressEvent(self, e):
-        a = self.app
-        taste = e.key()
-        if taste == Qt.Key.Key_D:
-            a.toggle_thema()
-        elif taste == Qt.Key.Key_U:
-            a.update_starten()
-        elif taste == Qt.Key.Key_M:
-            a.menu_umschalten()
-        elif taste == Qt.Key.Key_C:
-            a.bewerte("c")
-        elif taste == Qt.Key.Key_V:
-            a.bewerte("v")
-        elif taste == Qt.Key.Key_B:
-            a.bewerte("b")
-        elif taste == Qt.Key.Key_Left and a.einst["pfeiltasten"]:
-            a.go_back()
-        elif taste == Qt.Key.Key_Right and a.einst["pfeiltasten"]:
-            a.next_word()
+        if not self.app.taste(e.key()):
+            super().keyPressEvent(e)
 
     def resizeEvent(self, _):
         self._wrapcache.clear()
 
 
 # ---------------------------------------------------------------- Anwendung
+class Tastenfilter(QObject):
+    """Fängt Tastendrücke für die ganze Anwendung ab.
+
+    Nötig, weil Qt die Pfeiltasten sonst für seine eigene Fokus-Navigation
+    verbraucht, bevor sie beim Fenster ankommen - und damit die Tasten auch
+    dann wirken, wenn gerade das Menü oder die Wörterliste vorne ist."""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+
+    def eventFilter(self, ziel, ereignis):
+        if ereignis.type() == QEvent.Type.KeyPress:
+            if ereignis.key() == Qt.Key.Key_Escape:
+                return False                  # schliesst das jeweilige Fenster
+            if self.app.taste(ereignis.key()):
+                return True
+        return False
+
+
 class Voci:
     def __init__(self, qapp):
         self.qapp = qapp
@@ -1595,12 +1597,40 @@ class Voci:
             self._topmost(False)
         self.karte.show()
         self.karte.einblenden()
+        self.karte.activateWindow()
+        self.karte.setFocus()
+        self._tastenfilter = Tastenfilter(self)
+        qapp.installEventFilter(self._tastenfilter)
 
         qapp.applicationStateChanged.connect(self._app_zustand)
         self._takt = QTimer()
         self._takt.timeout.connect(self._ui_takt)
         self._takt.start(500)
         self._starte_hintergrund()
+
+    # ---- Tastatur
+    def taste(self, key):
+        """Eine Stelle für alle Tastenkürzel. Liefert True, wenn die Taste
+        verbraucht wurde."""
+        if key == Qt.Key.Key_D:
+            self.toggle_thema()
+        elif key == Qt.Key.Key_U:
+            self.update_starten()
+        elif key == Qt.Key.Key_M:
+            self.menu_umschalten()
+        elif key == Qt.Key.Key_C:
+            self.bewerte("c")
+        elif key == Qt.Key.Key_V:
+            self.bewerte("v")
+        elif key == Qt.Key.Key_B:
+            self.bewerte("b")
+        elif key == Qt.Key.Key_Left:
+            self.go_back()
+        elif key == Qt.Key.Key_Right:
+            self.next_word()
+        else:
+            return False
+        return True
 
     # ---- Fenster
     def _topmost(self, an):
