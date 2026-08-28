@@ -1412,7 +1412,7 @@ class Karte(QWidget):
         halb = voll.width() / 2 * max(self.scale, 0.02)
         rect = QRectF(cx - halb, voll.y(), 2 * halb, voll.height())
 
-        # Schatten nur im Ruhezustand (waehrend der Bewegung flackert er sonst)
+        # Schatten nur im Ruhezustand (während der Bewegung flackert er sonst)
         if self.scale > 0.999 and not self.winkel:
             grund = qfarbe(t["schatten"])
             for i in range(SCHATTEN - 4, 0, -2):

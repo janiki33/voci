@@ -157,13 +157,13 @@ jobs:
           path: out
           merge-multiple: true
 
-      # Jeder Build bekommt einen eigenen Tag. GitHub veroeffentlicht Releases
-      # unveraenderlich: Ein einmal benutzter Tag-Name laesst sich nie wieder
-      # verwenden. Frueher wurde hier "latest" geloescht und neu angelegt - das
+      # Jeder Build bekommt einen eigenen Tag. GitHub veröffentlicht Releases
+      # unveränderlich: Ein einmal benutzter Tag-Name lässt sich nie wieder
+      # verwenden. Früher wurde hier "latest" gelöscht und neu angelegt - das
       # Loeschen klappte, das Neuanlegen wurde abgelehnt, und das Repo stand
       # ganz ohne Release da. Der Dauerlink ist /releases/latest, den GitHub
-      # selbst auf das neuste Release zeigen laesst.
-      - name: Release veroeffentlichen
+      # selbst auf das neuste Release zeigen lässt.
+      - name: Release veröffentlichen
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -227,10 +227,10 @@ jobs:
           Das wird meist innert weniger Tage korrigiert und gilt dann für alle.
           NOTES
 
-          # Aeltere Releases aufraeumen, damit die Seite uebersichtlich bleibt.
+          # Ältere Releases aufräumen, damit die Seite übersichtlich bleibt.
           # Schlaegt das fehl, ist das kein Grund, den Build rot zu faerben.
           gh release list --repo "$REPO" --limit 100 --json tagName \
             --jq '.[].tagName' | tail -n +4 | while read -r alt; do
-              echo "loesche altes Release $alt"
+              echo "lösche altes Release $alt"
               gh release delete "$alt" --repo "$REPO" --yes --cleanup-tag || true
             done
