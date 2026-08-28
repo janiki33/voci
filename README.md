@@ -15,7 +15,8 @@ liegen die fertigen Dateien:
 
 | Datei | Für wen |
 |---|---|
-| **`Voci-Windows-Ordner.zip`** | **Für Windows die empfohlene Fassung.** Entpacken, `Voci.exe` im Ordner starten, **kein Python nötig**. |
+| **`Voci-Setup.exe`** | **Für Windows die empfohlene Fassung.** Installiert Voci an einen festen Ort, Zielordner frei wählbar, Desktop-Verknüpfung zum Ankreuzen, **keine Adminrechte nötig**. Damit funktionieren auch die Updates zuverlässig. |
+| `Voci-Windows-Ordner.zip` | Ohne Installation: entpacken, `Voci.exe` im Ordner starten. |
 | `Voci.exe` | Windows als eine einzige Datei – bequemer, wird aber von Virenscannern gerne fälschlich gemeldet. |
 | `Voci-macOS.zip` | macOS mit Apple Silicon (M1–M4). Entpacken, `Voci.app` starten. |
 | `Voci.pyw` | Alle Systeme mit installiertem Python – die einzige Variante ganz ohne Warnung. Braucht einmalig `pip install PySide6`. |
@@ -181,6 +182,24 @@ Die **Wertung** in der Wörterliste rechnet den Faktor um: 1 (und alles darüber
   Faktor ≥ 1) und *Wörterliste anzeigen*: sortierbar nach A–Z oder Wertung,
   mit Farbpunkt und Prozent pro Wort, ↺ setzt ein einzelnes Wort zurück,
   *Alle zurücksetzen* alles.
+
+## Installation unter Windows
+
+`Voci-Setup.exe` installiert nach `%LOCALAPPDATA%\Programs\Voci` — im
+Benutzerbereich, deshalb ohne Adminrechte und ohne UAC-Abfrage. Im Setup
+lassen sich wählen:
+
+- **Zielordner** (frei änderbar; wer für alle Benutzer installieren will,
+  kann im Setup auf Adminrechte umschalten und landet in *Programme*)
+- **Desktop-Verknüpfung** (Kästchen)
+- **Startmenü-Eintrag** (Kästchen)
+- **Automatisch starten beim Anmelden** (Kästchen, standardmässig aus)
+
+Deinstalliert wird regulär über *Apps & Features*.
+
+Der Hauptgrund für das Setup ist der Updater: Wenn Voci an einem festen Ort
+liegt, weiss er genau, wo er die Dateien austauschen muss. Bei einer irgendwo
+entpackten ZIP hängt das davon ab, wohin sie entpackt wurde.
 
 ## Updates
 

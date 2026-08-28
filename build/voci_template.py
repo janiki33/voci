@@ -381,44 +381,71 @@ def update_vorbereiten(art, ziel, arbeitsordner):
 
 
 def tausch_starten(ziel, neu, startbefehl):
-    """Startet ein kleines Hilfsprogramm, das wartet, bis Voci beendet ist, und
-    dann tauscht. Ein laufendes Programm kann sich nicht selbst ersetzen.
-    Die alte Fassung wird erst weggeräumt, wenn die neue an Ort und Stelle ist -
-    schlägt der Tausch fehl, kommt die alte zurück."""
+    """Startet ein Hilfsprogramm, das wartet, bis Voci beendet ist, und dann
+    tauscht - ein laufendes Programm kann sich nicht selbst ersetzen.
+
+    Ordner werden gespiegelt statt verschoben: 'move' kann Verzeichnisse nicht
+    über Laufwerksgrenzen bewegen, und der temporäre Ordner liegt oft auf einem
+    anderen Laufwerk als die entpackte Anwendung. Ausserdem wird am Ende immer
+    neu gestartet - scheitert der Tausch, läuft wenigstens die alte Fassung
+    weiter, statt dass gar nichts mehr da ist. Was passiert ist, steht im
+    Protokoll neben den Einstellungen."""
     pid = os.getpid()
-    sicherung = "%s.alt" % ziel
+    ordner = pathlib.Path(neu).is_dir()
+    try:
+        protokoll = datenordner() / "update.log"
+    except Exception:
+        protokoll = pathlib.Path(tempfile.gettempdir()) / "voci-update.log"
+
     if IS_WIN:
         skript = pathlib.Path(neu).parent / "voci_update.cmd"
+        if ordner:
+            # /MIR spiegelt den Ordner, /R und /W begrenzen Wiederholungen.
+            # robocopy meldet 0-7 als Erfolg, erst ab 8 ist etwas schiefgegangen.
+            tausch = ('robocopy "%s" "%s" /MIR /NFL /NDL /NJH /NJS /R:2 /W:1 '
+                      '>>"%s" 2>&1\r\n'
+                      'if errorlevel 8 (echo FEHLER robocopy >>"%s") '
+                      'else (echo Ordner ersetzt >>"%s")\r\n'
+                      % (neu, ziel, protokoll, protokoll, protokoll))
+        else:
+            tausch = ('copy /y "%s" "%s" >>"%s" 2>&1\r\n'
+                      'if errorlevel 1 (echo FEHLER copy >>"%s") '
+                      'else (echo Datei ersetzt >>"%s")\r\n'
+                      % (neu, ziel, protokoll, protokoll, protokoll))
         skript.write_text(
             "@echo off\r\n"
+            'echo ---- %%date%% %%time%% Update >>"{log}"\r\n'
             ":warten\r\n"
-            'tasklist /fi "PID eq %d" 2>nul | find "%d" >nul\r\n'
+            'tasklist /fi "PID eq {pid}" 2>nul | find "{pid}" >nul\r\n'
             "if not errorlevel 1 (\r\n"
             "  timeout /t 1 /nobreak >nul\r\n"
             "  goto warten\r\n"
             ")\r\n"
-            'if exist "%s" rmdir /s /q "%s" 2>nul\r\n'
-            'if exist "%s" del /q "%s" 2>nul\r\n'
-            'move "%s" "%s" >nul || exit /b 1\r\n'
-            'move "%s" "%s" >nul || (move "%s" "%s" >nul & exit /b 1)\r\n'
-            'start "" %s\r\n'
-            % (pid, pid, sicherung, sicherung, sicherung, sicherung,
-               ziel, sicherung, neu, ziel, sicherung, ziel, startbefehl),
+            "{tausch}"
+            'start "" {start}\r\n'.format(log=protokoll, pid=pid,
+                                           tausch=tausch, start=startbefehl),
             encoding="utf-8")
         subprocess.Popen(["cmd", "/c", str(skript)], cwd=str(skript.parent),
                          creationflags=0x08000000)   # ohne Konsolenfenster
     else:
         skript = pathlib.Path(neu).parent / "voci_update.sh"
+        if ordner:
+            tausch = ('if cp -a "%s/." "%s/" >>"%s" 2>&1; then\n'
+                      '  echo "Ordner ersetzt" >>"%s"\n'
+                      'else\n  echo "FEHLER beim Kopieren" >>"%s"\nfi\n'
+                      % (neu, ziel, protokoll, protokoll, protokoll))
+        else:
+            tausch = ('if cp -a "%s" "%s" >>"%s" 2>&1; then\n'
+                      '  echo "Datei ersetzt" >>"%s"\n'
+                      'else\n  echo "FEHLER beim Kopieren" >>"%s"\nfi\n'
+                      % (neu, ziel, protokoll, protokoll, protokoll))
         skript.write_text(
             "#!/bin/sh\n"
+            'echo "---- $(date) Update" >>"%s"\n'
             "while kill -0 %d 2>/dev/null; do sleep 0.5; done\n"
-            'rm -rf "%s"\n'
-            'mv "%s" "%s" || exit 1\n'
-            'mv "%s" "%s" || { mv "%s" "%s"; exit 1; }\n'
-            'rm -rf "%s"\n'
+            "%s"
             "%s &\n"
-            % (pid, sicherung, ziel, sicherung, neu, ziel, sicherung, ziel,
-               sicherung, startbefehl),
+            % (protokoll, pid, tausch, startbefehl),
             encoding="utf-8")
         skript.chmod(0o755)
         subprocess.Popen(["/bin/sh", str(skript)], cwd=str(skript.parent),
