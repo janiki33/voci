@@ -1168,7 +1168,7 @@ class MenuFenster(Panel):
 class ListeFenster(Panel):
     def __init__(self, app):
         super().__init__(app, "Wörterliste", 370, 430)
-        self.sortierung = getattr(app, "liste_sortierung", "az")
+        self.sortierung = getattr(app, "liste_sortierung", "wertung")
         self.regionen = {"close": self.close}
         self._bauen()
         self.neben_karte()
@@ -1208,15 +1208,20 @@ class ListeFenster(Panel):
             self.regionen["sortier-%s" % wert] = lambda w=wert: self._sortieren(w)
 
         self.rollbereich = QScrollArea()
-        self.rollbereich.setWidgetResizable(True)
+        self.rollbereich.setWidgetResizable(False)
+        self.rollbereich.setAlignment(Qt.AlignmentFlag.AlignHCenter
+                                      | Qt.AlignmentFlag.AlignTop)
         self.rollbereich.setFrameShape(QFrame.Shape.NoFrame)
         self.rollbereich.setStyleSheet(
-            "QScrollArea { background: transparent; }"
-            "QScrollBar:vertical { background: transparent; width: 6px; }"
-            "QScrollBar::handle:vertical { background: %s; border-radius: 3px;"
-            " min-height: 30px; }"
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollBar:vertical { background: transparent; width: 8px;"
+            " margin: 2px 0 2px 0; border: none; }"
+            "QScrollBar::handle:vertical { background: %s; border-radius: 4px;"
+            " min-height: 40px; }"
+            "QScrollBar::handle:vertical:hover { background: %s; }"
             "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }"
-            % hexc(t["grau"]))
+            "QScrollBar::add-page, QScrollBar::sub-page { background: none; }"
+            % (hexc(t["grau"]), hexc(t["zweit"])))
         wurzel.addWidget(self.rollbereich, 1)
         self._fuellen()
 
@@ -1236,15 +1241,20 @@ class ListeFenster(Panel):
         return indizes
 
     def _fuellen(self):
+        """Zwei bündige Spalten (FR | DE) statt eines Gedankenstrich-Texts;
+        die Liste sitzt horizontal mittig im Fenster."""
         a = self.app
         t = THEMEN[a.thema]
         self.zeilen = self.reihenfolge()
+        fm = QFontMetrics(basisfont(12))
+        FR_B, DE_B = 128, 118
+
         rumpf = QWidget()
+        rumpf.setFixedWidth(316)
         rumpf.setStyleSheet("background: transparent;")
         lay = QVBoxLayout(rumpf)
-        lay.setContentsMargins(0, 0, 6, 0)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        fm = QFontMetrics(basisfont(12))
         for n, i in enumerate(self.zeilen):
             if n:
                 strich = QFrame()
@@ -1255,13 +1265,23 @@ class ListeFenster(Panel):
             z = QWidget()
             z.setStyleSheet("background: transparent;")
             h = QHBoxLayout(z)
-            h.setContentsMargins(2, 6, 0, 6)
-            text = "%s – %s" % (a.vocab[i]["fr"], a.vocab[i]["de"])
-            wort = QLabel(fm.elidedText(text, Qt.TextElideMode.ElideRight, 214))
-            wort.setFont(basisfont(12))
-            wort.setStyleSheet("color: %s; background: transparent;"
-                               % hexc(t["fg"]))
-            h.addWidget(wort, 1)
+            h.setContentsMargins(2, 7, 0, 7)
+            h.setSpacing(8)
+            fr = QLabel(fm.elidedText(a.vocab[i]["fr"],
+                                      Qt.TextElideMode.ElideRight, FR_B))
+            fr.setFont(basisfont(12))
+            fr.setFixedWidth(FR_B)
+            fr.setStyleSheet("color: %s; background: transparent;"
+                             % hexc(t["fg"]))
+            h.addWidget(fr)
+            de = QLabel(fm.elidedText(a.vocab[i]["de"],
+                                      Qt.TextElideMode.ElideRight, DE_B))
+            de.setFont(basisfont(12))
+            de.setFixedWidth(DE_B)
+            de.setStyleSheet("color: %s; background: transparent;"
+                             % hexc(t["zweit"]))
+            h.addWidget(de)
+            h.addStretch(1)
             punkt = QLabel("●")
             punkt.setFont(basisfont(11))
             punkt.setStyleSheet("color: %s; background: transparent;"
@@ -1269,20 +1289,24 @@ class ListeFenster(Panel):
             h.addWidget(punkt)
             pz = QLabel("%d%%" % prozent)
             pz.setFont(basisfont(11))
-            pz.setFixedWidth(38)
+            pz.setFixedWidth(34)
+            pz.setAlignment(Qt.AlignmentFlag.AlignRight
+                            | Qt.AlignmentFlag.AlignVCenter)
             pz.setStyleSheet("color: %s; background: transparent;"
                              % hexc(t["zweit"]))
             h.addWidget(pz)
             reset = QPushButton("↺")
             reset.setFlat(True)
-            reset.setFixedWidth(24)
+            reset.setFixedWidth(22)
             reset.setCursor(Qt.CursorShape.PointingHandCursor)
-            reset.setStyleSheet("QPushButton { color: %s; background:"
-                                " transparent; border: none; }" % hexc(t["zweit"]))
+            reset.setStyleSheet(
+                "QPushButton { color: %s; background: transparent;"
+                " border: none; } QPushButton:hover { color: %s; }"
+                % (hexc(t["zweit"]), hexc(t["fg"])))
             reset.clicked.connect(lambda _=False, idx=i: self.reset(idx))
             h.addWidget(reset)
             lay.addWidget(z)
-        lay.addStretch(1)
+        rumpf.adjustSize()
         self.rollbereich.setWidget(rumpf)
 
     def reset(self, idx):
@@ -1809,7 +1833,7 @@ class Voci:
         self.update_fertig = None
         self.menu = None
         self.liste = None
-        self.liste_sortierung = "az"
+        self.liste_sortierung = "wertung"
 
         self.karte = Karte(self)
         self.karte.setWindowTitle("")
