@@ -112,7 +112,7 @@ jobs:
           cp Voci.pyw voci_main.py
           pyinstaller --windowed --noupx --name Voci \
             --icon assets/voci.icns --osx-bundle-identifier ch.janiki33.voci \
-            --collect-submodules PySide6 --workpath pyi-build voci_main.py
+            --workpath pyi-build voci_main.py
           PLIST=dist/Voci.app/Contents/Info.plist
           for eintrag in \
             "NSHumanReadableCopyright:© 2026 Janosch Salzgeber" \
