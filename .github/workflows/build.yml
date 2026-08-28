@@ -135,16 +135,23 @@ jobs:
           path: out
           merge-multiple: true
 
-      - name: Release "latest" aktualisieren
+      # Jeder Build bekommt einen eigenen Tag. GitHub veroeffentlicht Releases
+      # unveraenderlich: Ein einmal benutzter Tag-Name laesst sich nie wieder
+      # verwenden. Frueher wurde hier "latest" geloescht und neu angelegt - das
+      # Loeschen klappte, das Neuanlegen wurde abgelehnt, und das Repo stand
+      # ganz ohne Release da. Der Dauerlink ist /releases/latest, den GitHub
+      # selbst auf das neuste Release zeigen laesst.
+      - name: Release veroeffentlichen
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           ls -la out
-          gh release delete latest --repo "$REPO" --yes --cleanup-tag || true
-          gh release create latest out/* --repo "$REPO" \
-            --target "$GITHUB_SHA" \
-            --title "Voci - neuste Version" \
+          TAG="v$(date -u +%Y.%m.%d)-${GITHUB_SHA:0:7}"
+          echo "Tag: $TAG"
+          gh release create "$TAG" out/* --repo "$REPO" \
+            --target "$GITHUB_SHA" --latest \
+            --title "Voci - Stand $(date -u +%d.%m.%Y)" \
             --notes-file - <<'NOTES'
           Automatisch gebaut aus dem aktuellen Stand von `main`.
 
@@ -196,3 +203,11 @@ jobs:
           [Datei zur Analyse einreichen](https://www.microsoft.com/en-us/wdsi/filesubmission).
           Das wird meist innert weniger Tage korrigiert und gilt dann für alle.
           NOTES
+
+          # Aeltere Releases aufraeumen, damit die Seite uebersichtlich bleibt.
+          # Schlaegt das fehl, ist das kein Grund, den Build rot zu faerben.
+          gh release list --repo "$REPO" --limit 100 --json tagName \
+            --jq '.[].tagName' | tail -n +4 | while read -r alt; do
+              echo "loesche altes Release $alt"
+              gh release delete "$alt" --repo "$REPO" --yes --cleanup-tag || true
+            done
