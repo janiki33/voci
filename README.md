@@ -156,6 +156,9 @@ Fenster den Fokus haben; ein Klick darauf genügt.
 einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 (ein feiner Balken unten zählt runter) – ausser man tabbt vorher wieder rein.
 
+Beim **allerersten Start** zeigt Voci eine kurze Bedienungsanleitung mittig
+über der Karte — einmal wegklicken, sie kommt nicht wieder.
+
 ## Lern-Algorithmus
 
 Jede Vokabel trägt einen **Faktor**, der bei 1 startet und ihre
@@ -178,7 +181,9 @@ Die **Wertung** in der Wörterliste rechnet den Faktor um: 1 (und alles darüber
 
 - **Einstellungen:** Dark Mode, immer im Vordergrund, Pfeil-Knöpfe auf der
   Karte, Flip-Animation, Auto-Weiter an/aus und dessen Dauer (3/5/10 s),
-  Startsprache.
+  Startsprache. Darunter die **Steuerung** als Übersicht mit Tasten-Kacheln —
+  die drei Bewertungstasten sind **austauschbar**: Kachel anklicken, neue
+  Taste drücken (D, U, M und bereits vergebene Tasten werden abgelehnt).
   Alles wird gespeichert und beim nächsten Start wiederhergestellt.
 - **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich; aktuell gibt es
   *Étape 1*). Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit

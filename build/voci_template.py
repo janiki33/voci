@@ -200,7 +200,12 @@ STANDARD_EINSTELLUNGEN = {
     "immer_vorne": True,          # Fenster immer im Vordergrund
     "sets": ["etape1"],
     "schwere_modus": False,       # nur Wörter mit Faktor >= 1 üben
+    "taste_c": "C",               # kann ich nicht (austauschbar)
+    "taste_v": "V",               # neutral (austauschbar)
+    "taste_b": "B",               # kann ich (austauschbar)
+    "hinweis_gesehen": False,     # Bedienungshinweis beim ersten Start
 }
+FESTE_TASTEN = {"D", "U", "M"}    # dürfen nicht als Wertungstaste belegt werden
 
 # Bewertung: c = kann ich noch nicht, v = neutral, b = kann ich schon.
 # Jeder Eintrag trägt einen Faktor (Start 1), der die Ziehungswahrscheinlichkeit
@@ -915,6 +920,41 @@ class HakenKreis(QWidget):
         self.cb()
 
 
+class TastenKachel(QWidget):
+    """Kleine Tastatur-Kachel wie auf einem Keyboard. Austauschbare Tasten
+    sind klickbar: nach dem Klick übernimmt der nächste Tastendruck."""
+
+    def __init__(self, app, text, wofuer=None):
+        super().__init__()
+        self.app, self.text, self.wofuer = app, text, wofuer
+        breite = max(26, 12 + QFontMetrics(basisfont(11, fett=True))
+                     .horizontalAdvance(text))
+        self.setFixedSize(breite, 22)
+        if wofuer:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip("Klicken und neue Taste drücken")
+
+    def paintEvent(self, _):
+        t = THEMEN[self.app.thema]
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        aufnahme = self.wofuer and self.app.warte_auf_taste == self.wofuer
+        p.setBrush(qfarbe(t["akzent"]) if aufnahme else qfarbe(t["bg"]))
+        p.setPen(QPen(qfarbe(t["rand"]), 1))
+        p.drawRoundedRect(QRectF(0.5, 0.5, self.width() - 1, 21), 6, 6)
+        p.setPen(QColor("white") if aufnahme else qfarbe(t["fg"]))
+        p.setFont(basisfont(11, fett=True))
+        p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
+                   "…" if aufnahme else self.text)
+
+    def mouseReleaseEvent(self, _):
+        if self.wofuer:
+            a = self.app
+            a.warte_auf_taste = None if a.warte_auf_taste == self.wofuer \
+                else self.wofuer
+            self.update()
+
+
 class Gruppe(QFrame):
     """Abgerundete Gruppenfläche im Stil der macOS-Systemeinstellungen."""
 
@@ -960,7 +1000,7 @@ class Gruppe(QFrame):
 # ---------------------------------------------------------------- Menü
 class MenuFenster(Panel):
     def __init__(self, app, tab="einstellungen"):
-        super().__init__(app, "Voci", 320, 430)
+        super().__init__(app, "Voci", 320, 620)
         self.tab = tab
         self.regionen = {}           # Name -> Wirkung (auch für Tests)
         self._bauen()
@@ -1049,12 +1089,39 @@ class MenuFenster(Panel):
                                                                  self._bauen())
         wurzel.addWidget(g2)
 
-        hinweis = QLabel("Bewerten:  c kann ich nicht  ·  v neutral  ·  b kann ich")
-        hinweis.setFont(basisfont(11))
-        hinweis.setStyleSheet("color: %s; background: transparent;"
-                              % hexc(THEMEN[a.thema]["zweit"]))
-        hinweis.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        wurzel.addWidget(hinweis)
+        titel = QLabel("Steuerung")
+        titel.setFont(basisfont(11, fett=True))
+        titel.setStyleSheet("color: %s; background: transparent;"
+                            % hexc(THEMEN[a.thema]["zweit"]))
+        wurzel.addWidget(titel)
+        g3 = Gruppe(a)
+        for kacheln, text, wofuer in (
+                ([a.einst["taste_c"]], "kann ich nicht", "c"),
+                ([a.einst["taste_v"]], "neutral", "v"),
+                ([a.einst["taste_b"]], "kann ich schon", "b"),
+                (["←", "→"], "zurück · weiter", None),
+                (["D"], "Dark Mode", None),
+                (["M"], "Menü", None)):
+            links = QWidget()
+            links.setStyleSheet("background: transparent;")
+            h = QHBoxLayout(links)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(4)
+            for k in kacheln:
+                h.addWidget(TastenKachel(a, k, wofuer))
+            pfeil = QLabel("→")
+            pfeil.setFont(basisfont(11))
+            pfeil.setStyleSheet("color: %s; background: transparent;"
+                                % hexc(THEMEN[a.thema]["zweit"]))
+            h.addSpacing(4)
+            h.addWidget(pfeil)
+            lab = QLabel(text)
+            lab.setFont(basisfont(12))
+            lab.setStyleSheet("color: %s; background: transparent;"
+                              % hexc(THEMEN[a.thema]["fg"]))
+            h.addWidget(lab)
+            g3.zeile(links, [])
+        wurzel.addWidget(g3)
 
     def _tab_sets(self, wurzel):
         a = self.app
@@ -1162,6 +1229,56 @@ class MenuFenster(Panel):
                 lambda _=False, k=satz["id"]: a.set_loeschen(k))
             menue.addAction(entfernen)
         menue.exec(anker.mapToGlobal(anker.rect().bottomLeft()))
+
+
+# ---------------------------------------------------------------- Hinweis
+class HinweisFenster(Panel):
+    """Kurzanleitung beim allerersten Start."""
+
+    def __init__(self, app):
+        super().__init__(app, "Willkommen bei Voci", 340, 400)
+        t = THEMEN[app.thema]
+        lay = QVBoxLayout(self.inhalt)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(6)
+
+        for text in (
+                "Klick auf die Karte deckt die Übersetzung auf.",
+                "",
+                "Bewerte jedes Wort mit einer Taste:",
+                "   %s → kann ich nicht (kommt öfter)" % app.einst["taste_c"],
+                "   %s → neutral" % app.einst["taste_v"],
+                "   %s → kann ich schon (kommt seltener)" % app.einst["taste_b"],
+                "",
+                "←  → blättern zurück und weiter.",
+                "M öffnet das Menü (Einstellungen, eigene",
+                "Sets, Wörterliste), D den Dark Mode.",
+                "",
+                "Das Fenster bleibt immer im Vordergrund -",
+                "einfach neben die Arbeit legen."):
+            z = QLabel(text)
+            z.setFont(basisfont(12))
+            z.setStyleSheet("color: %s; background: transparent;"
+                            % hexc(t["fg"] if text.strip() else t["zweit"]))
+            lay.addWidget(z)
+        lay.addStretch(1)
+
+        los = QPushButton("Los geht's")
+        los.setFont(basisfont(13, fett=True))
+        los.setCursor(Qt.CursorShape.PointingHandCursor)
+        los.setFixedHeight(34)
+        los.setStyleSheet(
+            "QPushButton { color: white; background: %s; border: none;"
+            " border-radius: 17px; } QPushButton:hover { background: %s; }"
+            % (hexc(t["akzent"]), hexc(blend(t["akzent"], (0, 0, 0), 0.15))))
+        los.clicked.connect(self.close)
+        lay.addWidget(los)
+
+    def closeEvent(self, e):
+        self.app.einst["hinweis_gesehen"] = True
+        speichere_einstellungen(self.app.einst)
+        self.app.hinweis = None
+        super().closeEvent(e)
 
 
 # ---------------------------------------------------------------- Wörterliste
@@ -1833,6 +1950,8 @@ class Voci:
         self.update_fertig = None
         self.menu = None
         self.liste = None
+        self.hinweis = None
+        self.warte_auf_taste = None      # "c"/"v"/"b" während der Neubelegung
         self.liste_sortierung = "wertung"
 
         self.karte = Karte(self)
@@ -1851,6 +1970,8 @@ class Voci:
         self.karte.setFocus()
         self._tastenfilter = Tastenfilter(self)
         qapp.installEventFilter(self._tastenfilter)
+        if not self.einst["hinweis_gesehen"]:
+            QTimer.singleShot(600, self.hinweis_zeigen)
 
         qapp.applicationStateChanged.connect(self._app_zustand)
         self._takt = QTimer()
@@ -1862,18 +1983,31 @@ class Voci:
     def taste(self, key):
         """Eine Stelle für alle Tastenkürzel. Liefert True, wenn die Taste
         verbraucht wurde."""
+        zeichen = chr(key).upper() if 32 <= key < 127 else None
+
+        # Neue Wertungstaste aufnehmen (Klick auf eine Kachel im Menü)
+        if self.warte_auf_taste:
+            wofuer = self.warte_auf_taste
+            self.warte_auf_taste = None
+            belegt = FESTE_TASTEN | {self.einst["taste_%s" % w]
+                                     for w in ("c", "v", "b") if w != wofuer}
+            if zeichen and zeichen.isalpha() and zeichen not in belegt:
+                self.einst["taste_%s" % wofuer] = zeichen
+                speichere_einstellungen(self.einst)
+            if self.menu and self.menu.isVisible():
+                self.menu._bauen()
+            return True
+
+        for wofuer in ("c", "v", "b"):
+            if zeichen and zeichen == self.einst["taste_%s" % wofuer]:
+                self.bewerte(wofuer)
+                return True
         if key == Qt.Key.Key_D:
             self.toggle_thema()
         elif key == Qt.Key.Key_U:
             self.update_starten()
         elif key == Qt.Key.Key_M:
             self.menu_umschalten()
-        elif key == Qt.Key.Key_C:
-            self.bewerte("c")
-        elif key == Qt.Key.Key_V:
-            self.bewerte("v")
-        elif key == Qt.Key.Key_B:
-            self.bewerte("b")
         elif key == Qt.Key.Key_Left:
             self.go_back()
         elif key == Qt.Key.Key_Right:
@@ -2144,6 +2278,14 @@ class Voci:
             self.liste = ListeFenster(self)
             self.liste.move(pos)
             self.liste.show()
+
+    def hinweis_zeigen(self):
+        self.hinweis = HinweisFenster(self)
+        k = self.karte.frameGeometry()
+        self.hinweis.move(k.center().x() - self.hinweis.width() // 2,
+                          max(0, k.center().y() - self.hinweis.height() // 2))
+        self.hinweis.show()
+        self.hinweis.einblenden()
 
     def liste_zeigen(self):
         if self.liste and self.liste.isVisible():
