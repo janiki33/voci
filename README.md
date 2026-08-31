@@ -108,10 +108,14 @@ Falls ein Scanner trotzdem anschlägt:
 | Taste **c** / **v** / **b** | Wort bewerten: kann ich nicht / neutral / kann ich schon |
 | Pfeil **←** / **→** | zurück / weiter |
 
-Der Schalter **Pfeil-Knöpfe auf der Karte** blendet die Knöpfe ← → aus (X und
-FR/DE bleiben). Die **Pfeiltasten der Tastatur wirken immer**, auch bei
-ausgeblendeten Knöpfen und auch dann, wenn gerade das Menü oder die
-Wörterliste vorne ist.
+Die Schalter **Pfeil-Knöpfe**, **FR/DE-Knopf** und **Schliess-Knopf (X)**
+blenden die jeweiligen Knöpfe auf der Karte einzeln aus. Die **Pfeiltasten
+der Tastatur wirken immer**, auch bei ausgeblendeten Knöpfen und auch dann,
+wenn gerade das Menü oder die Wörterliste vorne ist. Wer das X ausblendet,
+kann sich unter **Steuerung** eine eigene Taste für **Programm schliessen**
+belegen (standardmässig unbelegt; Esc während der Aufnahme entfernt die
+Belegung wieder) — oder die Einstellung **Beim Raustabben schliessen**
+einschalten, dann beendet sich Voci, sobald es den Fokus verliert.
 
 Der **Zurück-Knopf springt ein Wort zurück** – Flips und der Sprachumschalter
 zählen nicht als Schritt. Das vorherige Wort erscheint in der Sprache, die
@@ -157,7 +161,8 @@ einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 (ein feiner Balken unten zählt runter) – ausser man tabbt vorher wieder rein.
 
 Beim **allerersten Start** zeigt Voci eine kurze Bedienungsanleitung mittig
-über der Karte — einmal wegklicken, sie kommt nicht wieder.
+über der Karte — die Tastenkürzel darin sehen aus wie echte Tastatur-Tasten.
+Einmal wegklicken, sie kommt nicht wieder.
 
 ## Lern-Algorithmus
 
@@ -179,17 +184,24 @@ Die **Wertung** in der Wörterliste rechnet den Faktor um: 1 (und alles darüber
 
 ## Menü (Taste m)
 
-- **Einstellungen:** Dark Mode, immer im Vordergrund, Pfeil-Knöpfe auf der
-  Karte, Flip-Animation, Auto-Weiter an/aus und dessen Dauer (3/5/10 s),
-  Startsprache. Darunter die **Steuerung** als Übersicht mit Tasten-Kacheln —
-  die drei Bewertungstasten sind **austauschbar**: Kachel anklicken, neue
-  Taste drücken (D, U, M und bereits vergebene Tasten werden abgelehnt).
-  Alles wird gespeichert und beim nächsten Start wiederhergestellt.
+- **Einstellungen** (scrollbar): Dark Mode, immer im Vordergrund,
+  Flip-Animation, Schatten an/aus; Pfeil-Knöpfe, FR/DE-Knopf und
+  Schliess-Knopf (X) auf der Karte einzeln ausblendbar; Auto-Weiter an/aus
+  und dessen Dauer (3/5/10 s), Startsprache, Beim Raustabben schliessen.
+  Darunter die **Steuerung** als Übersicht mit Tasten-Kacheln — die drei
+  Bewertungstasten und *Programm schliessen* sind **austauschbar**: Kachel
+  anklicken, neue Taste drücken (D, U, M und bereits vergebene Tasten werden
+  abgelehnt; Esc entfernt die Quit-Belegung). Ganz unten steht die
+  installierte **Version**. Alles wird gespeichert und beim nächsten Start
+  wiederhergestellt.
 - **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich; aktuell gibt es
   *Étape 1*). Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit
   Faktor ≥ 1) und *Wörterliste anzeigen*: sortierbar nach A–Z oder Wertung,
-  mit Farbpunkt und Prozent pro Wort, ↺ setzt ein einzelnes Wort zurück,
-  *Alle zurücksetzen* alles.
+  mit Farbpunkt und Prozent pro Wort. Das Listenfenster lässt sich **am
+  linken/rechten Rand breiter ziehen**, damit lange Wörter ganz zu sehen
+  sind. Der rote ↺-Knopf setzt ein einzelnes Wort zurück — nach einer
+  Rückfrage mit *Abbrechen*/*Zurücksetzen* und dem Kästchen „Diese Meldung
+  nicht mehr anzeigen"; *Alle zurücksetzen* setzt alles zurück.
 
 ## Installation unter Windows
 

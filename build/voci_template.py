@@ -203,7 +203,13 @@ STANDARD_EINSTELLUNGEN = {
     "taste_c": "C",               # kann ich nicht (austauschbar)
     "taste_v": "V",               # neutral (austauschbar)
     "taste_b": "B",               # kann ich (austauschbar)
+    "taste_quit": "",             # Programm schliessen (standardmässig unbelegt)
     "hinweis_gesehen": False,     # Bedienungshinweis beim ersten Start
+    "schatten": True,             # weicher Schatten unter den Fenstern
+    "sprach_knopf": True,         # FR/DE-Knopf oben links zeigen
+    "schliess_knopf": True,       # X oben rechts zeigen
+    "bei_inaktiv_schliessen": False,  # Programm beim Raustabben beenden
+    "reset_hinweis_aus": False,   # Rückfrage beim Zurücksetzen unterdrücken
 }
 FESTE_TASTEN = {"D", "U", "M"}    # dürfen nicht als Wertungstaste belegt werden
 
@@ -644,13 +650,13 @@ def basisfont(pixel, fett=False):
     return f
 
 
-def panel_zeichnen(p, breite, hoehe, thema):
+def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True):
     """Weicher Schatten, Kartenfläche, Haarlinie – gemeinsame Basis aller
     Fenster. Liefert das innere Karten-Rechteck."""
     t = THEMEN[thema]
     rect = QRectF(SCHATTEN, SCHATTEN, breite - 2 * SCHATTEN, hoehe - 2 * SCHATTEN)
     grund = qfarbe(t["schatten"])
-    for i in range(SCHATTEN - 4, 0, -2):
+    for i in range(SCHATTEN - 4, 0, -2) if mit_schatten else ():
         w = QColor(grund)
         w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2 * 0.5))
         p.setPen(Qt.PenStyle.NoPen)
@@ -687,7 +693,8 @@ class Panel(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         t = THEMEN[self.app.thema]
-        rect = panel_zeichnen(p, self.width(), self.height(), self.app.thema)
+        rect = panel_zeichnen(p, self.width(), self.height(), self.app.thema,
+                              self.app.einst["schatten"])
         p.setPen(qfarbe(t["fg"]))
         p.setFont(basisfont(15, fett=True))
         p.drawText(QRectF(rect.x() + 16, rect.y() + 8, rect.width() - 60, 28),
@@ -708,6 +715,11 @@ class Panel(QWidget):
 
     def _x_pos(self):
         return self.width() - SCHATTEN - 22, SCHATTEN + 22, 10
+
+    def resizeEvent(self, _):
+        self.inhalt.setGeometry(SCHATTEN + 16, SCHATTEN + 40,
+                                self.width() - 2 * SCHATTEN - 32,
+                                self.height() - 2 * SCHATTEN - 52)
 
     # -- Maus: X, sonst ziehen
     def mousePressEvent(self, e):
@@ -926,13 +938,16 @@ class TastenKachel(QWidget):
 
     def __init__(self, app, text, wofuer=None):
         super().__init__()
-        self.app, self.text, self.wofuer = app, text, wofuer
+        self.app, self.text, self.wofuer = app, text or "—", wofuer
         breite = max(26, 12 + QFontMetrics(basisfont(11, fett=True))
-                     .horizontalAdvance(text))
-        self.setFixedSize(breite, 22)
+                     .horizontalAdvance(self.text))
+        # Etwas Luft nach unten, sonst schneidet die Zeile die Rundung ab
+        self.setFixedSize(breite, 24)
         if wofuer:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.setToolTip("Klicken und neue Taste drücken")
+            self.setToolTip("Klicken und neue Taste drücken (Esc entfernt "
+                            "die Belegung)" if wofuer == "quit"
+                            else "Klicken und neue Taste drücken")
 
     def paintEvent(self, _):
         t = THEMEN[self.app.thema]
@@ -941,8 +956,10 @@ class TastenKachel(QWidget):
         aufnahme = self.wofuer and self.app.warte_auf_taste == self.wofuer
         p.setBrush(qfarbe(t["akzent"]) if aufnahme else qfarbe(t["bg"]))
         p.setPen(QPen(qfarbe(t["rand"]), 1))
-        p.drawRoundedRect(QRectF(0.5, 0.5, self.width() - 1, 21), 6, 6)
-        p.setPen(QColor("white") if aufnahme else qfarbe(t["fg"]))
+        p.drawRoundedRect(QRectF(0.5, 0.5, self.width() - 1,
+                                 self.height() - 1), 6, 6)
+        p.setPen(QColor("white") if aufnahme
+                 else qfarbe(t["zweit"] if self.text == "—" else t["fg"]))
         p.setFont(basisfont(11, fett=True))
         p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
                    "…" if aufnahme else self.text)
@@ -1034,10 +1051,10 @@ class MenuFenster(Panel):
         self.regionen["close"] = self.close
 
         if self.tab == "einstellungen":
-            self._tab_einstellungen(wurzel)
+            self._tab_einstellungen(wurzel)   # Scrollbereich füllt den Rest
         else:
             self._tab_sets(wurzel)
-        wurzel.addStretch(1)
+            wurzel.addStretch(1)
 
     def _tab_wechsel(self, tab):
         self.tab = tab
@@ -1045,28 +1062,62 @@ class MenuFenster(Panel):
 
     def _tab_einstellungen(self, wurzel):
         a = self.app
-        g1 = Gruppe(a)
+        t = THEMEN[a.thema]
 
-        def schalter(name, text, wert, cb):
+        # Die Einstellungen sind länger als das Fenster; deshalb rollt der
+        # Tab in einem dezenten Scrollbereich.
+        rollen = QScrollArea()
+        rollen.setWidgetResizable(True)
+        rollen.setFrameShape(QFrame.Shape.NoFrame)
+        rollen.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        rollen.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollBar:vertical { background: transparent; width: 8px;"
+            " margin: 2px 0 2px 0; border: none; }"
+            "QScrollBar::handle:vertical { background: %s; border-radius: 4px;"
+            " min-height: 40px; }"
+            "QScrollBar::handle:vertical:hover { background: %s; }"
+            "QScrollBar::add-line, QScrollBar::sub-line { height: 0; }"
+            "QScrollBar::add-page, QScrollBar::sub-page { background: none; }"
+            % (hexc(t["grau"]), hexc(t["zweit"])))
+        seite = QWidget()
+        seite.setStyleSheet("background: transparent;")
+        lay = QVBoxLayout(seite)
+        lay.setContentsMargins(0, 0, 4, 0)
+        lay.setSpacing(12)
+
+        def schalter(g, name, text, wert, cb):
             s = Schalter(a, wert, lambda _an: cb())
-            g = g1 if name in ("dark", "vorne", "knoepfe", "flip") else g2
             g.zeile(text, s)
             self.regionen[name] = cb
 
-        schalter("dark", "Dark Mode", a.thema == "dunkel", a.toggle_thema)
-        schalter("vorne", "Immer im Vordergrund", a.einst["immer_vorne"],
+        g1 = Gruppe(a)
+        schalter(g1, "dark", "Dark Mode", a.thema == "dunkel", a.toggle_thema)
+        schalter(g1, "vorne", "Immer im Vordergrund", a.einst["immer_vorne"],
                  lambda: a.einstellung_kippen("vorne", "immer_vorne"))
-        schalter("knoepfe", "Pfeil-Knöpfe auf der Karte",
-                 a.einst["pfeil_knoepfe"],
-                 lambda: a.einstellung_kippen("knoepfe", "pfeil_knoepfe"))
-        schalter("flip", "Flip-Animation", a.einst["flip_animation"],
+        schalter(g1, "flip", "Flip-Animation", a.einst["flip_animation"],
                  lambda: a.einstellung_kippen("flip", "flip_animation"))
-        wurzel.addWidget(g1)
+        schalter(g1, "schatten", "Schatten", a.einst["schatten"],
+                 lambda: a.einstellung_kippen("schatten", "schatten"))
+        lay.addWidget(g1)
 
         g2 = Gruppe(a)
+        schalter(g2, "knoepfe", "Pfeil-Knöpfe auf der Karte",
+                 a.einst["pfeil_knoepfe"],
+                 lambda: a.einstellung_kippen("knoepfe", "pfeil_knoepfe"))
+        schalter(g2, "sprachknopf", "FR/DE-Knopf auf der Karte",
+                 a.einst["sprach_knopf"],
+                 lambda: a.einstellung_kippen("sprachknopf", "sprach_knopf"))
+        schalter(g2, "xknopf", "Schliess-Knopf (X) auf der Karte",
+                 a.einst["schliess_knopf"],
+                 lambda: a.einstellung_kippen("xknopf", "schliess_knopf"))
+        lay.addWidget(g2)
+
+        g3 = Gruppe(a)
         s = Schalter(a, a.einst["auto_weiter"],
                      lambda _an: a.einstellung_kippen("auto", "auto_weiter"))
-        g2.zeile("Auto-Weiter", s)
+        g3.zeile("Auto-Weiter", s)
         self.regionen["auto"] = lambda: a.einstellung_kippen("auto", "auto_weiter")
 
         def dauer(w):
@@ -1074,7 +1125,7 @@ class MenuFenster(Panel):
             speichere_einstellungen(a.einst)
         seg = Segmente(a, [(3, "3 s"), (5, "5 s"), (10, "10 s")],
                        int(a.einst["auto_dauer"]), dauer)
-        g2.zeile("Wartezeit", seg)
+        g3.zeile("Wartezeit", seg)
         for wert in (3, 5, 10):
             self.regionen["dauer-%d" % wert] = lambda w=wert: (dauer(w),
                                                                self._bauen())
@@ -1083,22 +1134,27 @@ class MenuFenster(Panel):
             if w != a.start_side:
                 a.toggle_start()
         seg2 = Segmente(a, [("fr", "FR"), ("de", "DE")], a.start_side, sprache)
-        g2.zeile("Startsprache", seg2)
+        g3.zeile("Startsprache", seg2)
         for wert in ("fr", "de"):
             self.regionen["sprache-%s" % wert] = lambda w=wert: (sprache(w),
                                                                  self._bauen())
-        wurzel.addWidget(g2)
+        schalter(g3, "raustabben", "Beim Raustabben schliessen",
+                 a.einst["bei_inaktiv_schliessen"],
+                 lambda: a.einstellung_kippen("raustabben",
+                                              "bei_inaktiv_schliessen"))
+        lay.addWidget(g3)
 
         titel = QLabel("Steuerung")
         titel.setFont(basisfont(11, fett=True))
         titel.setStyleSheet("color: %s; background: transparent;"
-                            % hexc(THEMEN[a.thema]["zweit"]))
-        wurzel.addWidget(titel)
-        g3 = Gruppe(a)
+                            % hexc(t["zweit"]))
+        lay.addWidget(titel)
+        g4 = Gruppe(a)
         for kacheln, text, wofuer in (
                 ([a.einst["taste_c"]], "kann ich nicht", "c"),
                 ([a.einst["taste_v"]], "neutral", "v"),
                 ([a.einst["taste_b"]], "kann ich schon", "b"),
+                ([a.einst["taste_quit"]], "Programm schliessen", "quit"),
                 (["←", "→"], "zurück · weiter", None),
                 (["D"], "Dark Mode", None),
                 (["M"], "Menü", None)):
@@ -1112,16 +1168,27 @@ class MenuFenster(Panel):
             pfeil = QLabel("→")
             pfeil.setFont(basisfont(11))
             pfeil.setStyleSheet("color: %s; background: transparent;"
-                                % hexc(THEMEN[a.thema]["zweit"]))
+                                % hexc(t["zweit"]))
             h.addSpacing(4)
             h.addWidget(pfeil)
             lab = QLabel(text)
             lab.setFont(basisfont(12))
             lab.setStyleSheet("color: %s; background: transparent;"
-                              % hexc(THEMEN[a.thema]["fg"]))
+                              % hexc(t["fg"]))
             h.addWidget(lab)
-            g3.zeile(links, [])
-        wurzel.addWidget(g3)
+            g4.zeile(links, [])
+        lay.addWidget(g4)
+
+        version = QLabel("Voci %s" % VERSION)
+        version.setFont(basisfont(11))
+        version.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        version.setStyleSheet("color: %s; background: transparent;"
+                              % hexc(t["zweit"]))
+        lay.addWidget(version)
+        lay.addStretch(1)
+
+        rollen.setWidget(seite)
+        wurzel.addWidget(rollen, 1)
 
     def _tab_sets(self, wurzel):
         a = self.app
@@ -1236,31 +1303,51 @@ class HinweisFenster(Panel):
     """Kurzanleitung beim allerersten Start."""
 
     def __init__(self, app):
-        super().__init__(app, "Willkommen bei Voci", 340, 400)
+        super().__init__(app, "Willkommen bei Voci", 340, 420)
         t = THEMEN[app.thema]
         lay = QVBoxLayout(self.inhalt)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
 
-        for text in (
-                "Klick auf die Karte deckt die Übersetzung auf.",
-                "",
-                "Bewerte jedes Wort mit einer Taste:",
-                "   %s → kann ich nicht (kommt öfter)" % app.einst["taste_c"],
-                "   %s → neutral" % app.einst["taste_v"],
-                "   %s → kann ich schon (kommt seltener)" % app.einst["taste_b"],
-                "",
-                "←  → blättern zurück und weiter.",
-                "M öffnet das Menü (Einstellungen, eigene",
-                "Sets, Wörterliste), D den Dark Mode.",
-                "",
-                "Das Fenster bleibt immer im Vordergrund -",
-                "einfach neben die Arbeit legen."):
+        def absatz(text):
             z = QLabel(text)
             z.setFont(basisfont(12))
+            z.setWordWrap(True)
             z.setStyleSheet("color: %s; background: transparent;"
-                            % hexc(t["fg"] if text.strip() else t["zweit"]))
+                            % hexc(t["fg"]))
             lay.addWidget(z)
+
+        def tastenzeile(tasten, text):
+            """Tastenkürzel in Tastatur-Optik plus Erklärung daneben."""
+            z = QWidget()
+            z.setStyleSheet("background: transparent;")
+            h = QHBoxLayout(z)
+            h.setContentsMargins(6, 0, 0, 0)
+            h.setSpacing(4)
+            for k in tasten:
+                h.addWidget(TastenKachel(app, k))
+            lab = QLabel(text)
+            lab.setFont(basisfont(12))
+            lab.setStyleSheet("color: %s; background: transparent;"
+                              % hexc(t["fg"]))
+            h.addSpacing(6)
+            h.addWidget(lab)
+            h.addStretch(1)
+            lay.addWidget(z)
+
+        absatz("Klick auf die Karte deckt die Übersetzung auf.")
+        lay.addSpacing(4)
+        absatz("Bewerte jedes Wort mit einer Taste:")
+        tastenzeile([app.einst["taste_c"]], "kann ich nicht (kommt öfter)")
+        tastenzeile([app.einst["taste_v"]], "neutral")
+        tastenzeile([app.einst["taste_b"]], "kann ich schon (kommt seltener)")
+        lay.addSpacing(4)
+        tastenzeile(["←", "→"], "blättern zurück und weiter")
+        tastenzeile(["M"], "Menü (Einstellungen, Sets, Wörterliste)")
+        tastenzeile(["D"], "Dark Mode")
+        lay.addSpacing(4)
+        absatz("Das Fenster bleibt immer im Vordergrund - "
+               "einfach neben die Arbeit legen.")
         lay.addStretch(1)
 
         los = QPushButton("Los geht's")
@@ -1281,12 +1368,106 @@ class HinweisFenster(Panel):
         super().closeEvent(e)
 
 
+# ---------------------------------------------------------------- Rückfrage
+class FrageFenster(Panel):
+    """Kleine Rückfrage vor dem Zurücksetzen einer Wort-Wertung."""
+
+    def __init__(self, app, wort, weiter):
+        super().__init__(app, "Wertung zurücksetzen", 300, 200)
+        self.weiter = weiter
+        self.merken = False
+        t = THEMEN[app.thema]
+        lay = QVBoxLayout(self.inhalt)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+
+        text = QLabel("Die Wertung von „%s“ wird auf den Startwert "
+                      "zurückgesetzt." % wort)
+        text.setFont(basisfont(12))
+        text.setWordWrap(True)
+        text.setStyleSheet("color: %s; background: transparent;"
+                           % hexc(t["fg"]))
+        lay.addWidget(text)
+
+        def kippen():
+            self.merken = not self.merken
+            self.haken.wert = self.merken
+            self.haken.update()
+        self.haken = HakenKreis(app, False, kippen)
+        merk_text = QLabel("Diese Meldung nicht mehr anzeigen")
+        merk_text.setFont(basisfont(12))
+        merk_text.setStyleSheet("color: %s; background: transparent;"
+                                % hexc(t["zweit"]))
+        merkzeile = QWidget()
+        merkzeile.setStyleSheet("background: transparent;")
+        h = QHBoxLayout(merkzeile)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(8)
+        h.addWidget(self.haken)
+        h.addWidget(merk_text)
+        h.addStretch(1)
+        lay.addWidget(merkzeile)
+        lay.addStretch(1)
+
+        knoepfe = QWidget()
+        knoepfe.setStyleSheet("background: transparent;")
+        h2 = QHBoxLayout(knoepfe)
+        h2.setContentsMargins(0, 0, 0, 0)
+        h2.setSpacing(8)
+        weg = QPushButton("Abbrechen")
+        ok = QPushButton("Zurücksetzen")
+        for knopf in (weg, ok):
+            knopf.setFont(basisfont(13, fett=True))
+            knopf.setCursor(Qt.CursorShape.PointingHandCursor)
+            knopf.setFixedHeight(32)
+            h2.addWidget(knopf, 1)
+        weg.setStyleSheet(
+            "QPushButton { color: %s; background: %s; border: none;"
+            " border-radius: 16px; } QPushButton:hover { background: %s; }"
+            % (hexc(t["fg"]), hexc(t["gruppe"]), hexc(t["rand"])))
+        ok.setStyleSheet(
+            "QPushButton { color: white; background: %s; border: none;"
+            " border-radius: 16px; } QPushButton:hover { background: %s; }"
+            % (hexc(WERTUNG_BLITZ["c"]),
+               hexc(blend(WERTUNG_BLITZ["c"], (0, 0, 0), 0.15))))
+        weg.clicked.connect(self.close)
+        ok.clicked.connect(self._ok)
+        lay.addWidget(knoepfe)
+        self.regionen = {"abbrechen": self.close, "zuruecksetzen": self._ok,
+                         "merken": kippen, "close": self.close}
+
+    def ausloesen(self, name):
+        if name in self.regionen:
+            self.regionen[name]()
+            return True
+        return False
+
+    def _ok(self):
+        if self.merken:
+            self.app.einst["reset_hinweis_aus"] = True
+            speichere_einstellungen(self.app.einst)
+        self.weiter()
+        self.close()
+
+    def ueber(self, fenster):
+        g = fenster.frameGeometry()
+        self.move(g.center().x() - self.width() // 2,
+                  g.center().y() - self.height() // 2)
+
+
 # ---------------------------------------------------------------- Wörterliste
 class ListeFenster(Panel):
+    KANTE = 7                      # Greifzone zum Breiterziehen
+
     def __init__(self, app):
         super().__init__(app, "Wörterliste", 370, 430)
         self.sortierung = getattr(app, "liste_sortierung", "wertung")
         self.regionen = {"close": self.close}
+        self.frage = None
+        self._breit_zieh = None
+        self._fuell_takt = QTimer(self)
+        self._fuell_takt.setSingleShot(True)
+        self._fuell_takt.timeout.connect(self._fuellen)
         self._bauen()
         self.neben_karte()
 
@@ -1357,17 +1538,62 @@ class ListeFenster(Panel):
             indizes.sort(key=lambda i: a.vocab[i]["fr"].lower())
         return indizes
 
+    # -- Fenster am linken/rechten Rand breiter ziehen
+    def _kante(self, pos):
+        if SCHATTEN - 4 <= pos.x() <= SCHATTEN + self.KANTE:
+            return "l"
+        if self.width() - SCHATTEN - self.KANTE <= pos.x() \
+                <= self.width() - SCHATTEN + 4:
+            return "r"
+        return None
+
+    def mousePressEvent(self, e):
+        kante = self._kante(e.position())
+        if kante:
+            self._breit_zieh = (kante, e.globalPosition().toPoint().x(),
+                                self.geometry())
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        if self._breit_zieh:
+            kante, x0, g = self._breit_zieh
+            dx = e.globalPosition().toPoint().x() - x0
+            mini, maxi = 370 + 2 * SCHATTEN, 900 + 2 * SCHATTEN
+            if kante == "r":
+                breite = max(mini, min(maxi, g.width() + dx))
+                self.setGeometry(g.x(), g.y(), breite, g.height())
+            else:
+                breite = max(mini, min(maxi, g.width() - dx))
+                self.setGeometry(g.x() + g.width() - breite, g.y(),
+                                 breite, g.height())
+            self._fuell_takt.start(90)
+            return
+        self.setCursor(Qt.CursorShape.SizeHorCursor if self._kante(e.position())
+                       else Qt.CursorShape.ArrowCursor)
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if self._breit_zieh:
+            self._breit_zieh = None
+            self._fuellen()
+            return
+        super().mouseReleaseEvent(e)
+
     def _fuellen(self):
         """Zwei bündige Spalten (FR | DE) statt eines Gedankenstrich-Texts;
-        die Liste sitzt horizontal mittig im Fenster."""
+        die Liste sitzt horizontal mittig im Fenster und wächst mit, wenn
+        das Fenster breiter gezogen wird."""
         a = self.app
         t = THEMEN[a.thema]
         self.zeilen = self.reihenfolge()
         fm = QFontMetrics(basisfont(12))
-        FR_B, DE_B = 128, 118
+        rumpf_b = max(316, self.inhalt.width() - 14)
+        FR_B = int((rumpf_b - 70) * 0.52)
+        DE_B = (rumpf_b - 70) - FR_B
 
         rumpf = QWidget()
-        rumpf.setFixedWidth(316)
+        rumpf.setFixedWidth(rumpf_b)
         rumpf.setStyleSheet("background: transparent;")
         lay = QVBoxLayout(rumpf)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -1414,19 +1640,35 @@ class ListeFenster(Panel):
             h.addWidget(pz)
             reset = QPushButton("↺")
             reset.setFlat(True)
-            reset.setFixedWidth(22)
+            reset.setFixedSize(24, 22)
             reset.setCursor(Qt.CursorShape.PointingHandCursor)
             reset.setStyleSheet(
-                "QPushButton { color: %s; background: transparent;"
-                " border: none; } QPushButton:hover { color: %s; }"
-                % (hexc(t["zweit"]), hexc(t["fg"])))
+                "QPushButton { color: %s; background: %s;"
+                " border: 1px solid %s; border-radius: 6px; }"
+                "QPushButton:hover { background: %s; }"
+                % (hexc(WERTUNG_BLITZ["c"]), hexc(t["gruppe"]),
+                   hexc(t["rand"]), hexc(t["hover"])))
             reset.clicked.connect(lambda _=False, idx=i: self.reset(idx))
             h.addWidget(reset)
             lay.addWidget(z)
+        if self.zeilen:
+            self.regionen["reset-erste"] = \
+                lambda: self.reset(self.zeilen[0])
         rumpf.adjustSize()
         self.rollbereich.setWidget(rumpf)
 
     def reset(self, idx):
+        """Erst rückfragen (abschaltbar), dann die Wertung zurücksetzen."""
+        if self.app.einst["reset_hinweis_aus"]:
+            self._reset_ausfuehren(idx)
+            return
+        self.frage = FrageFenster(self.app, self.app.vocab[idx]["fr"],
+                                  lambda: self._reset_ausfuehren(idx))
+        self.frage.ueber(self)
+        self.frage.show()
+        self.frage.einblenden()
+
+    def _reset_ausfuehren(self, idx):
         self.app.setze_faktor(idx, 1.0)
         self._fuellen()
 
@@ -1485,9 +1727,14 @@ class Karte(QWidget):
                 ("close", r.right() - pad, r.y() + pad, kr),
                 ("back", r.x() + pad, r.bottom() - pad, kr),
                 ("next", r.right() - pad, r.bottom() - pad, kr))
+        weg = set()
         if not self.app.einst["pfeil_knoepfe"]:
-            return tuple(b for b in alle if b[0] not in ("back", "next"))
-        return alle
+            weg |= {"back", "next"}
+        if not self.app.einst["sprach_knopf"]:
+            weg.add("lang")
+        if not self.app.einst["schliess_knopf"]:
+            weg.add("close")
+        return tuple(b for b in alle if b[0] not in weg)
 
     # ---- weiche Übergänge
     def _hover_schritt(self):
@@ -1554,8 +1801,9 @@ class Karte(QWidget):
         halb = voll.width() / 2 * max(self.scale, 0.02)
         rect = QRectF(cx - halb, voll.y(), 2 * halb, voll.height())
 
-        # Schatten nur im Ruhezustand (während der Bewegung flackert er sonst)
-        if self.scale > 0.999 and not self.winkel:
+        # Der Schatten liegt in den transformierten Koordinaten und dreht
+        # deshalb beim Flip mit; abschaltbar im Menü.
+        if a.einst["schatten"]:
             grund = qfarbe(t["schatten"])
             for i in range(SCHATTEN - 4, 0, -2):
                 w = QColor(grund)
@@ -1917,7 +2165,8 @@ class Tastenfilter(QObject):
 
     def eventFilter(self, ziel, ereignis):
         if ereignis.type() == QEvent.Type.KeyPress:
-            if ereignis.key() == Qt.Key.Key_Escape:
+            if ereignis.key() == Qt.Key.Key_Escape \
+                    and not self.app.warte_auf_taste:
                 return False                  # schliesst das jeweilige Fenster
             if self.app.taste(ereignis.key()):
                 return True
@@ -1951,7 +2200,7 @@ class Voci:
         self.menu = None
         self.liste = None
         self.hinweis = None
-        self.warte_auf_taste = None      # "c"/"v"/"b" während der Neubelegung
+        self.warte_auf_taste = None      # "c"/"v"/"b"/"quit" bei Neubelegung
         self.liste_sortierung = "wertung"
 
         self.karte = Karte(self)
@@ -1985,19 +2234,28 @@ class Voci:
         verbraucht wurde."""
         zeichen = chr(key).upper() if 32 <= key < 127 else None
 
-        # Neue Wertungstaste aufnehmen (Klick auf eine Kachel im Menü)
+        # Neue Steuerungstaste aufnehmen (Klick auf eine Kachel im Menü)
         if self.warte_auf_taste:
             wofuer = self.warte_auf_taste
             self.warte_auf_taste = None
             belegt = FESTE_TASTEN | {self.einst["taste_%s" % w]
-                                     for w in ("c", "v", "b") if w != wofuer}
-            if zeichen and zeichen.isalpha() and zeichen not in belegt:
+                                     for w in ("c", "v", "b", "quit")
+                                     if w != wofuer and self.einst["taste_%s" % w]}
+            if key == Qt.Key.Key_Escape and wofuer == "quit":
+                # Escape löscht die (optionale) Belegung wieder
+                self.einst["taste_quit"] = ""
+                speichere_einstellungen(self.einst)
+            elif zeichen and zeichen.isalpha() and zeichen not in belegt:
                 self.einst["taste_%s" % wofuer] = zeichen
                 speichere_einstellungen(self.einst)
             if self.menu and self.menu.isVisible():
                 self.menu._bauen()
             return True
 
+        if zeichen and self.einst["taste_quit"] \
+                and zeichen == self.einst["taste_quit"]:
+            self.beenden()
+            return True
         for wofuer in ("c", "v", "b"):
             if zeichen and zeichen == self.einst["taste_%s" % wofuer]:
                 self.bewerte(wofuer)
@@ -2214,6 +2472,9 @@ class Voci:
         if schluessel == "immer_vorne":
             self._topmost(self.einst[schluessel])
         self.karte.update()
+        for fenster in (self.menu, self.liste, self.hinweis):
+            if fenster:
+                fenster.update()
 
     def schwere_kippen(self):
         self.einst["schwere_modus"] = not self.einst["schwere_modus"]
@@ -2224,12 +2485,19 @@ class Voci:
         self.set_active(zustand == Qt.ApplicationState.ApplicationActive)
 
     def set_active(self, aktiv):
+        if not aktiv and self.war_aktiv and self.einst["bei_inaktiv_schliessen"]:
+            self.war_aktiv = aktiv
+            self.beenden()
+            return
         if aktiv and not self.war_aktiv:
             self.cancel_auto()
         elif (not aktiv and self.war_aktiv and self.flips >= FLIPS_NEEDED
               and self.einst["auto_weiter"]):
             self.start_auto()
         self.war_aktiv = aktiv
+
+    def beenden(self):
+        self.qapp.quit()
 
     def start_auto(self):
         self.cancel_auto()
