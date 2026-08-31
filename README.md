@@ -105,6 +105,8 @@ Falls ein Scanner trotzdem anschlägt:
 | Taste **d** | Dark Mode an/aus |
 | Taste **u** | gefundenes Update einspielen |
 | Taste **m** | Menü öffnen/schliessen (Einstellungen, Voci-Sets) |
+| Rechtsklick auf die Karte | Auswahl **Einstellungen** / **Voci-Sets** — öffnet das Menü direkt am passenden Tab |
+| Taste **F1** | Bedienungshinweis öffnen/schliessen (zeigt immer die aktuell belegten Tasten) |
 | Taste **c** / **v** / **b** | Wort bewerten: kann ich nicht / neutral / kann ich schon |
 | Pfeil **←** / **→** | zurück / weiter |
 
@@ -162,7 +164,11 @@ einmal geflippt wurde, kommt nach 5 Sekunden automatisch das nächste Wort
 
 Beim **allerersten Start** zeigt Voci eine kurze Bedienungsanleitung mittig
 über der Karte — die Tastenkürzel darin sehen aus wie echte Tastatur-Tasten.
-Einmal wegklicken, sie kommt nicht wieder.
+Einmal wegklicken, sie kommt nicht von selbst wieder; mit **F1** lässt sie
+sich jederzeit erneut öffnen und zeigt dann die aktuell eingestellte
+Steuerung. Menü, Wörterliste und Hinweis öffnen sich so, dass sie möglichst
+ganz auf dem Bildschirm liegen, und halten sich wie die Karte an die
+Einstellung *Immer im Vordergrund*.
 
 ## Lern-Algorithmus
 
@@ -201,7 +207,9 @@ Die **Wertung** in der Wörterliste rechnet den Faktor um: 1 (und alles darüber
   linken/rechten Rand breiter ziehen**, damit lange Wörter ganz zu sehen
   sind. Der rote ↺-Knopf setzt ein einzelnes Wort zurück — nach einer
   Rückfrage mit *Abbrechen*/*Zurücksetzen* und dem Kästchen „Diese Meldung
-  nicht mehr anzeigen"; *Alle zurücksetzen* setzt alles zurück.
+  nicht mehr anzeigen"; solange die Rückfrage offen ist, verblasst die
+  Liste dahinter und lässt sich nicht bedienen. *Alle zurücksetzen* setzt
+  alles zurück.
 
 ## Installation unter Windows
 

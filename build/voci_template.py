@@ -675,8 +675,10 @@ class Panel(QWidget):
         super().__init__(None)
         self.app = app
         self.titel = titel
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint
-                            | Qt.WindowType.WindowStaysOnTopHint)
+        flags = Qt.WindowType.FramelessWindowHint
+        if app.einst["immer_vorne"]:
+            flags |= Qt.WindowType.WindowStaysOnTopHint
+        self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(breite + 2 * SCHATTEN, hoehe + 2 * SCHATTEN)
         self._zieh = None
@@ -770,9 +772,22 @@ class Panel(QWidget):
         k = self.app.karte.frameGeometry()
         schirm = self.screen().availableGeometry() if self.screen() else None
         x = k.right() - SCHATTEN + 8
-        if schirm and x + self.width() > schirm.right():
-            x = max(0, k.left() - self.width() + SCHATTEN - 8)
+        if schirm and x + self.width() - SCHATTEN > schirm.right():
+            x = k.left() - self.width() + SCHATTEN - 8
         self.move(x, k.top())
+        self.auf_schirm()
+
+    def auf_schirm(self):
+        """Position so einrücken, dass das sichtbare Fenster (ohne den
+        Schattenrand) möglichst ganz auf dem Bildschirm liegt."""
+        schirm = self.screen().availableGeometry() if self.screen() else None
+        if not schirm:
+            return
+        x = max(schirm.left() - SCHATTEN,
+                min(self.x(), schirm.right() - self.width() + SCHATTEN))
+        y = max(schirm.top() - SCHATTEN,
+                min(self.y(), schirm.bottom() - self.height() + SCHATTEN))
+        self.move(x, y)
 
 
 class Schalter(QWidget):
@@ -1084,7 +1099,9 @@ class MenuFenster(Panel):
         seite = QWidget()
         seite.setStyleSheet("background: transparent;")
         lay = QVBoxLayout(seite)
-        lay.setContentsMargins(0, 0, 4, 0)
+        # Rechts 16 px Abstand: so sitzt die 8-px-Rollbalken-Spur mittig
+        # zwischen den Gruppen und dem Fensterrand (dort sind auch 16 px)
+        lay.setContentsMargins(0, 0, 16, 0)
         lay.setSpacing(12)
 
         def schalter(g, name, text, wert, cb):
@@ -1157,7 +1174,8 @@ class MenuFenster(Panel):
                 ([a.einst["taste_quit"]], "Programm schliessen", "quit"),
                 (["←", "→"], "zurück · weiter", None),
                 (["D"], "Dark Mode", None),
-                (["M"], "Menü", None)):
+                (["M"], "Menü", None),
+                (["F1"], "Hilfe", None)):
             links = QWidget()
             links.setStyleSheet("background: transparent;")
             h = QHBoxLayout(links)
@@ -1345,6 +1363,9 @@ class HinweisFenster(Panel):
         tastenzeile(["←", "→"], "blättern zurück und weiter")
         tastenzeile(["M"], "Menü (Einstellungen, Sets, Wörterliste)")
         tastenzeile(["D"], "Dark Mode")
+        tastenzeile(["F1"], "diese Hilfe")
+        if app.einst["taste_quit"]:
+            tastenzeile([app.einst["taste_quit"]], "Programm schliessen")
         lay.addSpacing(4)
         absatz("Das Fenster bleibt immer im Vordergrund - "
                "einfach neben die Arbeit legen.")
@@ -1369,12 +1390,51 @@ class HinweisFenster(Panel):
 
 
 # ---------------------------------------------------------------- Rückfrage
-class FrageFenster(Panel):
-    """Kleine Rückfrage vor dem Zurücksetzen einer Wort-Wertung."""
+class Schleier(QWidget):
+    """Legt sich über ein Panel, blasst es Richtung Kartenfarbe aus und
+    schluckt alle Eingaben, solange eine Rückfrage offen ist."""
 
-    def __init__(self, app, wort, weiter):
+    def __init__(self, panel):
+        super().__init__(panel)
+        self.panel = panel
+        self.staerke = 0.0
+        self.setGeometry(0, 0, panel.width(), panel.height())
+        self._anim = Ablauf(self, 160, self._schritt)
+        self._anim.start()
+
+    def _schritt(self, w):
+        self.staerke = kurve(w)
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        t = THEMEN[self.panel.app.thema]
+        rect = QRectF(SCHATTEN, SCHATTEN, self.width() - 2 * SCHATTEN,
+                      self.height() - 2 * SCHATTEN)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(qfarbe(tuple(t["bg"]) + (int(170 * self.staerke),)))
+        p.drawRoundedRect(rect, RADIUS, RADIUS)
+
+    # alle Eingaben schlucken -> das Fenster dahinter ist nicht bedienbar
+    def mousePressEvent(self, e):
+        e.accept()
+
+    def mouseReleaseEvent(self, e):
+        e.accept()
+
+    def mouseMoveEvent(self, e):
+        e.accept()
+
+
+class FrageFenster(Panel):
+    """Kleine Rückfrage vor dem Zurücksetzen einer Wort-Wertung. Gehört zur
+    Wörterliste: solange sie offen ist, liegt dort ein Schleier drüber."""
+
+    def __init__(self, app, wort, weiter, liste=None):
         super().__init__(app, "Wertung zurücksetzen", 300, 200)
         self.weiter = weiter
+        self.liste = liste
         self.merken = False
         t = THEMEN[app.thema]
         lay = QVBoxLayout(self.inhalt)
@@ -1448,6 +1508,11 @@ class FrageFenster(Panel):
             speichere_einstellungen(self.app.einst)
         self.weiter()
         self.close()
+
+    def closeEvent(self, e):
+        if self.liste:
+            self.liste._schleier_weg()
+        super().closeEvent(e)
 
     def ueber(self, fenster):
         g = fenster.frameGeometry()
@@ -1658,15 +1723,30 @@ class ListeFenster(Panel):
         self.rollbereich.setWidget(rumpf)
 
     def reset(self, idx):
-        """Erst rückfragen (abschaltbar), dann die Wertung zurücksetzen."""
+        """Erst rückfragen (abschaltbar), dann die Wertung zurücksetzen.
+        Während der Rückfrage verblasst die Liste und ist gesperrt."""
         if self.app.einst["reset_hinweis_aus"]:
             self._reset_ausfuehren(idx)
             return
+        self._schleier = Schleier(self)
+        self._schleier.show()
+        self._schleier.raise_()
         self.frage = FrageFenster(self.app, self.app.vocab[idx]["fr"],
-                                  lambda: self._reset_ausfuehren(idx))
+                                  lambda: self._reset_ausfuehren(idx), self)
         self.frage.ueber(self)
         self.frage.show()
         self.frage.einblenden()
+
+    def _schleier_weg(self):
+        if getattr(self, "_schleier", None):
+            self._schleier.deleteLater()
+            self._schleier = None
+        self.frage = None
+
+    def closeEvent(self, e):
+        if self.frage and self.frage.isVisible():
+            self.frage.close()
+        super().closeEvent(e)
 
     def _reset_ausfuehren(self, idx):
         self.app.setze_faktor(idx, 1.0)
@@ -1790,10 +1870,18 @@ class Karte(QWidget):
             p.scale(s1, s1)
             p.translate(-cx, -cy)
 
-        # Echter Flip: Drehung um die Hochachse mit Perspektive
+        # Echter Flip: Drehung um die Hochachse mit Perspektive. Die
+        # Projektion vergrössert die zugewandte Kante (Fluchtpunkt bei
+        # 1024 px); ohne Gegen-Skalierung ragt die Karte oben und unten
+        # über das Fenster hinaus und wird abgeschnitten.
         if self.winkel:
+            tiefe = 1024.0
+            ausladung = voll.width() / 2 * abs(math.sin(
+                math.radians(self.winkel)))
+            s2 = (tiefe - ausladung) / tiefe
             dreh = QTransform()
             dreh.translate(cx, cy)
+            dreh.scale(s2, s2)
             dreh.rotate(self.winkel, Qt.Axis.YAxis)
             dreh.translate(-cx, -cy)
             p.setTransform(dreh, True)
@@ -2066,6 +2154,9 @@ class Karte(QWidget):
     def mousePressEvent(self, e):
         self.app.set_active(True)
         self.setFocus(Qt.FocusReason.MouseFocusReason)
+        if e.button() == Qt.MouseButton.RightButton:
+            self._kontextmenue(e.globalPosition().toPoint())
+            return
         pos = e.position()
         kante = self._kante(pos)
         if kante:
@@ -2128,7 +2219,7 @@ class Karte(QWidget):
         bewegt = getattr(self, "_bewegt", False)
         self._zieh = None
         self._presse = None
-        if resize or bewegt:
+        if resize or bewegt or e.button() != Qt.MouseButton.LeftButton:
             return
         knopf = self._knopf(e.position())
         a = self.app
@@ -2142,6 +2233,24 @@ class Karte(QWidget):
             a.toggle_start()
         elif self.karte_rect().contains(e.position()):
             a.flip()
+
+    def _kontextmenue(self, punkt):
+        """Rechtsklick auf die Karte: direkt ins Menü springen."""
+        self._kontextmenue_bauen().exec(punkt)
+
+    def _kontextmenue_bauen(self):
+        t = THEMEN[self.app.thema]
+        menue = QMenu(self)
+        menue.setStyleSheet(
+            "QMenu { background: %s; color: %s; border: 1px solid %s;"
+            " border-radius: 8px; padding: 4px; }"
+            "QMenu::item { padding: 6px 14px; border-radius: 5px; }"
+            "QMenu::item:selected { background: %s; }"
+            % (hexc(t["bg"]), hexc(t["fg"]), hexc(t["rand"]), hexc(t["hover"])))
+        menue.addAction("Einstellungen",
+                        lambda: self.app.menu_oeffnen("einstellungen"))
+        menue.addAction("Voci-Sets", lambda: self.app.menu_oeffnen("sets"))
+        return menue
 
     def keyPressEvent(self, e):
         if not self.app.taste(e.key()):
@@ -2266,6 +2375,8 @@ class Voci:
             self.update_starten()
         elif key == Qt.Key.Key_M:
             self.menu_umschalten()
+        elif key == Qt.Key.Key_F1:
+            self.hinweis_umschalten()
         elif key == Qt.Key.Key_Left:
             self.go_back()
         elif key == Qt.Key.Key_Right:
@@ -2276,11 +2387,17 @@ class Voci:
 
     # ---- Fenster
     def _topmost(self, an):
-        k = self.karte
-        sichtbar = k.isVisible()
-        k.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, an)
-        if sichtbar:
-            k.show()
+        """'Immer im Vordergrund' gilt für die Karte und alle Nebenfenster."""
+        fenster = [self.karte, self.menu, self.liste, self.hinweis]
+        if self.liste and getattr(self.liste, "frage", None):
+            fenster.append(self.liste.frage)
+        for f in fenster:
+            if not f:
+                continue
+            sichtbar = f.isVisible()
+            f.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, an)
+            if sichtbar:
+                f.show()
 
     # ---- Sets
     def _sets_aufbauen(self):
@@ -2532,6 +2649,16 @@ class Voci:
         self.menu.show()
         self.menu.einblenden()
 
+    def menu_oeffnen(self, tab):
+        """Menü auf einem bestimmten Tab öffnen (Rechtsklick-Auswahl)."""
+        if self.menu and self.menu.isVisible():
+            self.menu._tab_wechsel(tab)
+            self.menu.raise_()
+            return
+        self.menu = MenuFenster(self, tab)
+        self.menu.show()
+        self.menu.einblenden()
+
     def menu_neu_aufbauen(self):
         if self.menu and self.menu.isVisible():
             tab = self.menu.tab
@@ -2546,6 +2673,14 @@ class Voci:
             self.liste = ListeFenster(self)
             self.liste.move(pos)
             self.liste.show()
+
+    def hinweis_umschalten(self):
+        """F1: Bedienungshinweis öffnen/schliessen — immer frisch gebaut,
+        damit die gezeigten Tasten der aktuellen Belegung entsprechen."""
+        if self.hinweis and self.hinweis.isVisible():
+            self.hinweis.close()
+            return
+        self.hinweis_zeigen()
 
     def hinweis_zeigen(self):
         self.hinweis = HinweisFenster(self)
