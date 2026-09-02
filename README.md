@@ -18,7 +18,8 @@ liegen die fertigen Dateien:
 | **`Voci-Setup.exe`** | **Für Windows die empfohlene Fassung.** Installiert Voci an einen festen Ort, Zielordner frei wählbar, Desktop-Verknüpfung zum Ankreuzen, **keine Adminrechte nötig**. Damit funktionieren auch die Updates zuverlässig. |
 | `Voci-Windows-Ordner.zip` | Ohne Installation: entpacken, `Voci.exe` im Ordner starten. |
 | `Voci.exe` | Windows als eine einzige Datei – bequemer, wird aber von Virenscannern gerne fälschlich gemeldet. |
-| `Voci-macOS.zip` | macOS mit Apple Silicon (M1–M4). Entpacken, `Voci.app` starten. |
+| **`Voci-Setup.pkg`** | **Für macOS (Apple Silicon, M1–M4) die empfohlene Fassung.** Installiert Voci in den Ordner *Programme* — auf Wunsch **nur für dich** (`~/Applications`, ohne Adminrechte) oder für alle Benutzer — und startet es gleich. Die installierte App läuft danach ohne Gatekeeper-Meldung. |
+| `Voci-macOS.zip` | macOS mit Apple Silicon ohne Installation. Entpacken, `Voci.app` starten. |
 | `Voci.pyw` | Alle Systeme mit installiertem Python – die einzige Variante ganz ohne Warnung. Braucht einmalig `pip install PySide6`. |
 
 Auf **Intel-Macs** läuft die `Voci-macOS.zip` nicht; dort nimmst du die `Voci.pyw`,
@@ -56,6 +57,11 @@ Apple-Signatur (99 USD pro Jahr für ein Entwicklerkonto).
 - **macOS 14 und älter:** Rechtsklick (oder Ctrl-Klick) auf `Voci.app` →
   **Öffnen** → im Dialog nochmals **Öffnen**.
 - **Per Terminal:** `xattr -dr com.apple.quarantine /Pfad/zu/Voci.app`
+
+Mit `Voci-Setup.pkg` kommt die Meldung nur **einmal für das Paket** (gleiche
+Wege wie oben, nur mit Rechtsklick auf die `.pkg`-Datei). Was der Installer
+kopiert, trägt keine Quarantäne-Markierung — die installierte App startet
+danach ohne Nachfrage, auch nach Updates.
 
 Beides ist einmal pro heruntergeladener Datei nötig. Ganz wegbekommen liesse sich
 die Warnung nur über den jeweiligen App-Store: Laut
@@ -228,6 +234,28 @@ Deinstalliert wird regulär über *Apps & Features*.
 Der Hauptgrund für das Setup ist der Updater: Wenn Voci an einem festen Ort
 liegt, weiss er genau, wo er die Dateien austauschen muss. Bei einer irgendwo
 entpackten ZIP hängt das davon ab, wohin sie entpackt wurde.
+
+## Installation unter macOS
+
+`Voci-Setup.pkg` ist ein normales Installer-Paket (Doppelklick, ggf. einmal
+per Rechtsklick → *Öffnen* an Gatekeeper vorbei). Im Assistenten lässt sich
+wählen:
+
+- **Nur für mich** → `~/Applications/Voci.app`, ohne Adminrechte
+- **Für alle Benutzer** → `/Applications/Voci.app` (Passwort nötig; die App
+  gehört danach trotzdem dir, damit der Updater sie austauschen kann)
+
+Nach der Installation startet Voci automatisch und liegt im Launchpad. Was
+der Installer kopiert, trägt keine Quarantäne-Markierung — anders als bei
+der ZIP zeigt die App selbst darum keine Gatekeeper-Meldung mehr.
+Deinstallieren heisst hier wie bei jeder Mac-App: `Voci.app` in den
+Papierkorb ziehen (Einstellungen und Wertungen liegen in
+`~/Library/Application Support/Voci`).
+
+Das Paket wird in `.github/workflows/build.yml` mit `pkgbuild` und
+`productbuild` aus `build/voci_setup_distribution.xml`, den Texten in
+`build/pkg-ressourcen/` und dem Skript `build/pkg-scripts/postinstall`
+gebaut.
 
 ## PDF-Import
 

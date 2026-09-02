@@ -1,0 +1,25 @@
+#!/bin/sh
+# Läuft nach dem Kopieren der App. $2 ist der gewählte Zielordner
+# (/Applications oder ~/Applications).
+APP="$2/Voci.app"
+
+# Bei "für alle Benutzer" läuft der Installer als root und die App gehört
+# root - dann könnte der eingebaute Updater sie später nicht austauschen.
+# Deshalb gehört die App danach dem Benutzer, der sie installiert hat.
+if [ -d "$APP" ] && [ -n "$USER" ] && [ "$USER" != "root" ]; then
+    chown -R "$USER" "$APP" 2>/dev/null || true
+fi
+
+# Der Installer nimmt die Quarantäne-Markierung ohnehin nicht mit; sicher
+# ist sicher, damit der erste Start keine Gatekeeper-Meldung mehr zeigt.
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+
+# Voci gleich starten - als der angemeldete Benutzer, nicht als root.
+if [ -d "$APP" ]; then
+    if [ "$(id -u)" = "0" ] && [ -n "$USER" ] && [ "$USER" != "root" ]; then
+        sudo -u "$USER" open "$APP" 2>/dev/null || true
+    else
+        open "$APP" 2>/dev/null || true
+    fi
+fi
+exit 0

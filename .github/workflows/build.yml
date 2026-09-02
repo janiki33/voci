@@ -149,6 +149,27 @@ jobs:
           mkdir -p out
           ditto -c -k --keepParent dist/Voci.app out/Voci-macOS.zip
 
+      # Installer-Paket wie Voci-Setup.exe: legt die App an einen festen Ort
+      # (~/Applications ohne Adminrechte oder /Applications), damit der
+      # Updater weiss, was er austauschen muss. Vom Installer kopierte Dateien
+      # tragen keine Quarantäne-Markierung - die Gatekeeper-Meldung kommt
+      # dann nur einmal für das Paket, nicht mehr für die App.
+      - name: Installer-Paket bauen
+        run: |
+          VERSION="${{ needs.version.outputs.tag }}"
+          pkgbuild --component dist/Voci.app \
+            --install-location /Applications \
+            --identifier ch.janiki33.voci --version "${VERSION#v}" \
+            --scripts build/pkg-scripts \
+            pkg-build-Voci-Komponente.pkg
+          mkdir -p pkg-teile && mv pkg-build-Voci-Komponente.pkg pkg-teile/Voci-Komponente.pkg
+          productbuild --distribution build/voci_setup_distribution.xml \
+            --resources build/pkg-ressourcen \
+            --package-path pkg-teile \
+            out/Voci-Setup.pkg
+          pkgutil --check-signature out/Voci-Setup.pkg || true
+          ls -la out
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -192,7 +213,8 @@ jobs:
           | **`Voci-Setup.exe`** | **Für Windows die empfohlene Fassung.** Installiert Voci an einen festen Ort, legt auf Wunsch eine Desktop-Verknüpfung an und macht damit auch die Updates zuverlässig. Der Zielordner ist im Setup frei wählbar, Adminrechte braucht es nicht. |
           | `Voci-Windows-Ordner.zip` | Ohne Installation: entpacken und `Voci.exe` im Ordner starten. |
           | `Voci.exe` | Windows als eine einzige Datei – bequemer, wird aber von Virenscannern gerne fälschlich gemeldet. Wenn das passiert: das Setup oder die Ordner-Fassung nehmen. |
-          | `Voci-macOS.zip` | macOS (Apple Silicon). Entpacken, `Voci.app` starten. |
+          | **`Voci-Setup.pkg`** | **Für macOS (Apple Silicon) die empfohlene Fassung.** Installiert Voci in den Ordner Programme (auf Wunsch nur für dich, ohne Adminrechte) und startet es. Die installierte App zeigt keine Gatekeeper-Meldung mehr - nur das Paket selbst einmal (siehe unten). |
+          | `Voci-macOS.zip` | macOS (Apple Silicon) ohne Installation: Entpacken, `Voci.app` starten. |
           | `Voci.pyw` | Alle Systeme mit installiertem Python, ganz ohne Warnungen. |
 
           ### Windows warnt beim ersten Start
