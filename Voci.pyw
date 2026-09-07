@@ -1963,8 +1963,9 @@ class Karte(QWidget):
     def _feld_platzieren(self):
         r = self.karte_rect()
         breite = max(120, int(r.width() - 120))
+        # Deutlich über der Pfeil-Zeile, Richtung Kartenmitte
         self.feld.setGeometry(int(r.center().x() - breite / 2),
-                              int(r.bottom() - 30 - 20), breite, 40)
+                              int(r.bottom() - 92), breite, 40)
 
     def _feld_zeigen(self, an):
         """Feld nur im Ruhezustand zeigen - beim Flip dreht die Karte, das
@@ -2103,7 +2104,7 @@ class Karte(QWidget):
         p.setFont(basisfont(max(1, groesse)))
         p.setPen(qfarbe(t["fg"]))
         schreib = a.einst["schreibmodus"]
-        textfeld = rect.adjusted(20, 20, -20, -76 if schreib else -20)
+        textfeld = rect.adjusted(20, 20, -20, -100 if schreib else -20)
         self._feld_zeigen(schreib)
         p.setOpacity(p.opacity() * self.wort_alpha)
         if self.versatz:
@@ -2183,7 +2184,7 @@ class Karte(QWidget):
 
     def wortgroesse(self, text):
         r = self.karte_rect()
-        hoehe = r.height() - (56 if self.app.einst["schreibmodus"] else 0)
+        hoehe = r.height() - (80 if self.app.einst["schreibmodus"] else 0)
         basis = min(r.width() / 19.0, hoehe / 11.5)
         n = len(text)
         if n > 70:
