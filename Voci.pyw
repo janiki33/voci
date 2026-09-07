@@ -1095,10 +1095,15 @@ class Gruppe(QFrame):
             lab.setFont(basisfont(13))
             lab.setStyleSheet("color: %s; background: transparent;"
                               % hexc(THEMEN[self.app.thema]["fg"]))
-            h.addWidget(lab)
+            # Darf schmaler werden als der Text: sonst wird die ganze Seite
+            # breiter als der Sichtbereich und schiebt sich unter den
+            # Rollbalken, statt dass der Text notfalls abgeschnitten wird.
+            lab.setMinimumWidth(1)
+            h.addWidget(lab, 1)
         else:
-            h.addWidget(links)
-        h.addStretch(1)
+            links.setMinimumWidth(1)
+            h.addWidget(links, 1)
+        h.addStretch(0)
         for w in (rechts if isinstance(rechts, (list, tuple)) else [rechts]):
             h.addWidget(w)
         self.lay.addWidget(z)
@@ -1196,13 +1201,13 @@ class MenuFenster(Panel):
         lay.addWidget(g1)
 
         g2 = Gruppe(a)
-        schalter(g2, "knoepfe", "Pfeil-Knöpfe auf der Karte",
+        schalter(g2, "knoepfe", "Pfeil-Knöpfe",
                  a.einst["pfeil_knoepfe"],
                  lambda: a.einstellung_kippen("knoepfe", "pfeil_knoepfe"))
-        schalter(g2, "sprachknopf", "FR/DE-Knopf auf der Karte",
+        schalter(g2, "sprachknopf", "FR/DE-Knopf",
                  a.einst["sprach_knopf"],
                  lambda: a.einstellung_kippen("sprachknopf", "sprach_knopf"))
-        schalter(g2, "xknopf", "Schliess-Knopf (X) auf der Karte",
+        schalter(g2, "xknopf", "Schliess-Knopf (X)",
                  a.einst["schliess_knopf"],
                  lambda: a.einstellung_kippen("xknopf", "schliess_knopf"))
         lay.addWidget(g2)
@@ -1231,7 +1236,7 @@ class MenuFenster(Panel):
         for wert in ("fr", "de"):
             self.regionen["sprache-%s" % wert] = lambda w=wert: (sprache(w),
                                                                  self._bauen())
-        schalter(g3, "schreib", "Schreibmodus (Übersetzung tippen)",
+        schalter(g3, "schreib", "Schreibmodus",
                  a.einst["schreibmodus"], a.schreib_umschalten)
         schalter(g3, "raustabben", "Beim Raustabben schliessen",
                  a.einst["bei_inaktiv_schliessen"],
@@ -1284,6 +1289,7 @@ class MenuFenster(Panel):
         lay.addWidget(version)
         lay.addStretch(1)
 
+        seite.setMinimumWidth(1)
         rollen.setWidget(seite)
         wurzel.addWidget(rollen, 1)
 
