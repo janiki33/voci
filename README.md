@@ -220,8 +220,12 @@ gelten als *adroit* oder *adroite*, und Artikel (le/la/un/une/der/die/das …)
 darf man weglassen. Gleiche Buchstaben ohne Akzente oder ein einzelner
 Tippfehler zählen als *fast richtig*.
 
-Solange man tippt, gehen alle Buchstaben ins Feld — die Kürzel c/v/b/d/m
-sind dann ausser Kraft, nur **F1** und **Esc** (Feld leeren) bleiben. Der
+Solange der Cursor im Feld steht, gehen alle Buchstaben ins Feld — die
+Kürzel c/v/b/d/m sind dann ausser Kraft, nur **F1** und **Esc** (Feld
+leeren) bleiben. **Tab** springt aus dem Feld heraus (dann wirken die Kürzel
+wieder) und wieder hinein. Bei jedem neuen Wort landet der Cursor
+automatisch im Feld; beim Einschalten des Modus und beim Programmstart
+bleibt er auf der Karte. Der
 Schreibmodus nutzt denselben Lern-Algorithmus: Wörter, die man nicht
 schreiben kann, kommen automatisch öfter.
 

@@ -1913,7 +1913,7 @@ class Karte(QWidget):
             and self.start_anim >= 1.0
         if sichtbar != self.feld.isVisible():
             self.feld.setVisible(sichtbar)
-            if sichtbar and not self.feld.isReadOnly():
+            if sichtbar and not self.feld.isReadOnly() and self.app.feld_fokus:
                 self.feld.setFocus()
 
     # ---- Geometrie
@@ -2408,15 +2408,28 @@ class Tastenfilter(QObject):
 
     def eventFilter(self, ziel, ereignis):
         if ereignis.type() == QEvent.Type.KeyPress:
-            if ereignis.key() == Qt.Key.Key_Escape \
-                    and not self.app.warte_auf_taste:
-                return False                  # schliesst das jeweilige Fenster
-            if self.app.tippt(ziel):
+            taste = ereignis.key()
+            a = self.app
+            # Schreibmodus: Tab springt ins Eingabefeld und wieder heraus
+            if taste in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab) \
+                    and a.einst["schreibmodus"] and a.antwort_status is None \
+                    and a.karte.feld.isVisible():
+                if a.tippt(ziel):
+                    a.karte.setFocus(Qt.FocusReason.TabFocusReason)
+                else:
+                    a.karte.feld.setFocus(Qt.FocusReason.TabFocusReason)
+                return True
+            if a.tippt(ziel):
                 # Buchstaben, Pfeile, Enter gehören dem Eingabefeld; nur
                 # F1 und Esc (Feld leeren) bleiben Kürzel.
-                if ereignis.key() == Qt.Key.Key_F1:
-                    return self.app.taste(ereignis.key())
+                if taste == Qt.Key.Key_F1:
+                    return a.taste(taste)
+                if taste == Qt.Key.Key_Escape:
+                    a.karte.feld.clear()
+                    return True
                 return False
+            if taste == Qt.Key.Key_Escape and not a.warte_auf_taste:
+                return False                  # schliesst das jeweilige Fenster
             if self.app.taste(ereignis.key()):
                 return True
         return False
@@ -2451,6 +2464,7 @@ class Voci:
         self.hinweis = None
         self.warte_auf_taste = None      # "c"/"v"/"b"/"quit" bei Neubelegung
         self.antwort_status = None       # Schreibmodus: None/richtig/fast/falsch
+        self.feld_fokus = False          # erst ein neues Wort holt den Cursor ins Feld
         self.schreib_stand = [0, 0, 0]   # richtig / fast / falsch in dieser Sitzung
         self.liste_sortierung = "wertung"
 
@@ -2726,7 +2740,7 @@ class Voci:
             return
         self.einst["schreibmodus"] = not self.einst["schreibmodus"]
         speichere_einstellungen(self.einst)
-        self._antwort_zuruecksetzen()
+        self._antwort_zuruecksetzen(fokus=False)   # Einschalten: Karte behält Fokus
         self.karte._wrapcache.clear()
         if self.einst["schreibmodus"] and self.side != self.start_side:
             def commit():
@@ -2737,14 +2751,20 @@ class Voci:
         if self.menu and self.menu.isVisible():
             self.menu._bauen()
 
-    def _antwort_zuruecksetzen(self):
+    def _antwort_zuruecksetzen(self, fokus=True):
+        """Feld leeren und freigeben. Bei einem neuen Wort springt der Cursor
+        hinein; beim Einschalten des Modus bleibt er auf der Karte, damit die
+        Kürzel weiter wirken (Tab wechselt jederzeit hin und her)."""
         self.antwort_status = None
+        self.feld_fokus = fokus
         feld = self.karte.feld
         feld.setReadOnly(False)
         feld.clear()
         self.karte._feld_stil(None)
-        if self.einst["schreibmodus"] and feld.isVisible():
+        if fokus and self.einst["schreibmodus"] and feld.isVisible():
             feld.setFocus()
+        elif not fokus:
+            self.karte.setFocus()
 
     def antworten(self, text):
         """Enter im Eingabefeld: prüfen, werten, aufleuchten - und je nach
