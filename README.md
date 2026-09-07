@@ -241,8 +241,10 @@ schreiben kann, kommen automatisch öfter.
   abgelehnt; Esc entfernt die Quit-Belegung). Ganz unten steht die
   installierte **Version**. Alles wird gespeichert und beim nächsten Start
   wiederhergestellt.
-- **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich; aktuell gibt es
-  *Étape 1*). Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit
+- **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich; eingebaut sind
+  *Étape 1* mit 243 Wörtern und *Fragewörter* mit den zehn französischen
+  Fragewörtern où, qui, quand, que, qu'est-ce que, comment, combien,
+  pourquoi, quel, quelle). Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit
   Faktor ≥ 1) und *Wörterliste anzeigen*: sortierbar nach A–Z oder Wertung,
   mit Farbpunkt und Prozent pro Wort. Das Listenfenster lässt sich **am
   linken/rechten Rand breiter ziehen**, damit lange Wörter ganz zu sehen

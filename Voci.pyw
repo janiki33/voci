@@ -45,7 +45,7 @@ try:
                                 QEasingCurve, QSize, QEvent, QObject)
     from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication,
                                QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
-                               QTransform, QLinearGradient)
+                               QTransform, QLinearGradient, QBrush, QRegion)
     from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame,
                                    QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
@@ -64,6 +64,22 @@ except ImportError:                                  # Python-Fassung ohne PySid
 
 EINGEBAUTE_VOCAB = json.loads(r'''[{"fr": "Se présenter", "de": "sich jemandem vorstellen"}, {"fr": "la présentation", "de": "die Vorstellung von etwas oder jemandem"}, {"fr": "caractériser", "de": "charakterisieren"}, {"fr": "le caractère", "de": "der Charakter"}, {"fr": "enchanté/enchantée (adj.)", "de": "Sehr erfreut!"}, {"fr": "une adresse", "de": "eine Adresse"}, {"fr": "s’adresser à", "de": "sich wenden/richten an"}, {"fr": "mémoriser", "de": "sich einprägen/sich merken"}, {"fr": "la mémoire", "de": "das Gedächtnis/die Erinnerung"}, {"fr": "la date de naissance", "de": "das Geburtsdatum"}, {"fr": "la naissance", "de": "die Geburt"}, {"fr": "naître", "de": "geboren werden"}, {"fr": "Je suis né/née le 15 août 1994", "de": "Ich bin am 15. August 1994 geboren"}, {"fr": "le mois/les mois", "de": "der Monat/die Monate"}, {"fr": "janvier, février, mars, avril, mai, juin, juillet, août, septembre, octobre, novembre, décembre", "de": "Januar, Februar, März, April, Mai, Juni, Juli, August, September, Oktober, November, Dezember"}, {"fr": "en janvier, en août, en juin", "de": "im Januar, im August, im Juni"}, {"fr": "les jours (le jour) de la semaine :", "de": "die Tage der Woche:"}, {"fr": "lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche", "de": "Montag, Dienstag, Mittwoch, Donnerstag, Freitag, Samstag, Sonntag"}, {"fr": "le lundi, le samedi, le dimanche", "de": "am/immer am Montag, am Samstag, am Sonntag"}, {"fr": "à ce soir – à demain – à samedi", "de": "bis heute Abend - bis morgen – bis am Samstag"}, {"fr": "le matin – ce matin", "de": "der/am Morgen – heute Morgen"}, {"fr": "l’après-midi, (m.) – cet après-midi", "de": "der/am Nachmittag – heute Nachmittag"}, {"fr": "le soir – ce soir", "de": "der/am Abend – heute Abend"}, {"fr": "les quatre saisons, (f.):", "de": "die 4 Jahreszeiten:"}, {"fr": "l’été (m.), l’automne(m.), l’hiver (m.), le printemps", "de": "der Sommer, der Herbst, der Winter, der Frühling"}, {"fr": "en été, en automne, en hiver, au printemps", "de": "im Sommer, im Herbst, im Winter, im Frühling"}, {"fr": "un état civil", "de": "ein Zivilstand"}, {"fr": "marié/mariée (adj.)", "de": "verheiratet"}, {"fr": "célibataire (adj.)", "de": "ledig"}, {"fr": "divorcé/divorcée (adj.)", "de": "geschieden"}, {"fr": "veuf/veuve (adj.)", "de": "verwitwet"}, {"fr": "la langue maternelle", "de": "die Muttersprache"}, {"fr": "la langue étrangère", "de": "die Fremdsprache"}, {"fr": "apprendre une langue", "de": "eine Sprache lernen"}, {"fr": "un enregistrement", "de": "eine (Radio-/Musik...)-Aufnahme"}, {"fr": "enregistrer", "de": "(Musik,…) aufnehmen"}, {"fr": "une émission", "de": "eine Fernsehsendung"}, {"fr": "regarder la télévision", "de": "fernsehen"}, {"fr": "écouter la radio", "de": "Radio hören"}, {"fr": "être d’origine italienne/suisse/allemande", "de": "ital./schweiz./deutscher Herkunft sein"}, {"fr": "traduire : je traduis", "de": "übersetzen: ich übersetze"}, {"fr": "la traduction", "de": "die Übersetzung"}, {"fr": "le portable", "de": "das Handy"}, {"fr": "téléphoner à quelqu’un - appeler quelqu‘un", "de": "jemandem telefonieren/jem. anrufen"}, {"fr": "se décider", "de": "sich entscheiden"}, {"fr": "la décision", "de": "die Entscheidung"}, {"fr": "se reposer", "de": "sich ausruhen, sich erholen"}, {"fr": "s’inscrire", "de": "sich einschreiben"}, {"fr": "répondre", "de": "antworten"}, {"fr": "la réponse", "de": "die Antwort"}, {"fr": "cocher la réponse correcte", "de": "die richtige Antwort ankreuzen"}, {"fr": "faire des études (f.)", "de": "ein Studium machen"}, {"fr": "aller en boîte", "de": "in die Disco gehen"}, {"fr": "choisir", "de": "auswählen"}, {"fr": "le choix", "de": "(die Aus)-Wahl"}, {"fr": "le numéro de portable", "de": "die Handynummer"}, {"fr": "demander quelque chose à quelqu’un", "de": "jemanden um etwas bitten"}, {"fr": "participer à", "de": "teilnehmen an"}, {"fr": "la participation", "de": "die Teilnahme"}, {"fr": "poser une question", "de": "eine Frage stellen"}, {"fr": "s‘amuser", "de": "sich amüsieren"}, {"fr": "se coucher, aller au lit", "de": "ins Bett gehen"}, {"fr": "se dépêcher", "de": "sich beeilen"}, {"fr": "se doucher", "de": "sich duschen"}, {"fr": "s’ énerver", "de": "sich aufregen"}, {"fr": "s ’habiller", "de": "sich anziehen"}, {"fr": "se maquiller", "de": "sich schminken"}, {"fr": "s’occuper de", "de": "sich beschäftigen mit, sich kümmern um"}, {"fr": "se réveiller", "de": "aufwachen"}, {"fr": "à mon avis/selon moi", "de": "meiner Meinung nach"}, {"fr": "par contre", "de": "hingegen"}, {"fr": "avoir raison", "de": "Recht haben"}, {"fr": "avoir tort", "de": "unrecht haben"}, {"fr": "exagérer", "de": "übertreiben"}, {"fr": "trouver", "de": "finden"}, {"fr": "un emploi", "de": "eine (Arbeits-)Stelle"}, {"fr": "une erreur/une faute", "de": "ein Fehler"}, {"fr": "un projet d’avenir", "de": "ein Zukunftsplan/ein Projekt für die Zukunft"}, {"fr": "rendre visite à quelqu’un", "de": "jemanden besuchen"}, {"fr": "visiter un musée/une ville", "de": "ein Museum/eine Stadt besichtigen"}, {"fr": "fréquenter/faire l’école de Maturité Professionnelle", "de": "die BMS besuchen"}, {"fr": "la maturité professionnelle", "de": "die BM/Berufsmatura"}, {"fr": "le groupe", "de": "die Gruppe"}, {"fr": "parler anglais-espagnol-français-italien-japonais-polonais-russe-turc-allemand", "de": "englisch-spanisch-französisch-italienisch-japanisch-polnisch-russisch-türkisch-deutsch sprechen"}, {"fr": "avoir besoin de (j’ai besoin d’une langue étrangère)", "de": "brauchen (ich brauche eine Fremdsprache)"}, {"fr": "savoir parler français", "de": "französisch sprechen können"}, {"fr": "savoir", "de": "wissen, können (weil gelernt!)"}, {"fr": "connaître", "de": "kennen, kennenlernen"}, {"fr": "pouvoir", "de": "können, dürfen"}, {"fr": "l’Angleterre (f.)", "de": "England"}, {"fr": "un Anglais/une Anglaise", "de": "ein Engländer/eine Engländerin"}, {"fr": "anglais,e (adj.)", "de": "englisch"}, {"fr": "l‘ Espagne (f.)", "de": "Spanien"}, {"fr": "un Espagnol/une Espagnole", "de": "ein Spanier/eine Spanierin"}, {"fr": "espagnol,e (adj.)", "de": "spanisch"}, {"fr": "la France", "de": "Frankreich"}, {"fr": "un Français/une Française", "de": "ein Franzose/eine Französin"}, {"fr": "français,e (adj.)", "de": "französisch"}, {"fr": "l’Italie (f.)", "de": "Italien"}, {"fr": "un Italien/une Italienne", "de": "ein Italiener/eine Italienerin"}, {"fr": "italien/italienne (adj.)", "de": "italienisch"}, {"fr": "le Japon", "de": "Japan"}, {"fr": "un Japonais/une Japonaise", "de": "ein Japaner/eine Japanerin"}, {"fr": "japonais,e (adj.)", "de": "japanisch"}, {"fr": "la Russie", "de": "Russland"}, {"fr": "un Russe/une Russe", "de": "ein Russe/eine Russin"}, {"fr": "russe m,f (adj.)", "de": "russisch"}, {"fr": "l’Allemagne (f.)", "de": "Deutschland"}, {"fr": "un Allemand/une Allemande", "de": "ein Deutscher/eine Deutsche"}, {"fr": "allemand,e (adj.)", "de": "deutsch"}, {"fr": "la Croatie", "de": "Kroatien"}, {"fr": "croate (adj.)", "de": "kroatisch"}, {"fr": "la Serbie", "de": "Serbien"}, {"fr": "serbe (adj.)", "de": "serbisch"}, {"fr": "maîtriser quelque chose", "de": "etwas beherrschen"}, {"fr": "maîtriser une langue/une situation", "de": "eine Sprache/eine Situation beherrschen"}, {"fr": "utiliser qc comme", "de": "etwas benutzen als"}, {"fr": "apprendre qc", "de": "etw. lernen"}, {"fr": "apprendre à faire qc", "de": "lernen etw. zu machen"}, {"fr": "un apprentissage", "de": "eine Lehre/ein Lernen"}, {"fr": "un apprenti/une apprentie", "de": "ein Lehrling, ein Lernender/eine Lernende"}, {"fr": "améliorer qc", "de": "etw. verbessern"}, {"fr": "améliorer la prononciation", "de": "die Aussprache verbessern"}, {"fr": "accompagner", "de": "begleiten"}, {"fr": "être utile m,f (adj.)", "de": "nützlich sein"}, {"fr": "riche m,f (adj.)", "de": "reich"}, {"fr": "la richesse", "de": "der Reichtum"}, {"fr": "construire une phrase/une maison", "de": "einen Satz bilden, ein Haus bauen"}, {"fr": "disponible m,f (adj.)", "de": "verfügbar"}, {"fr": "partout", "de": "überall"}, {"fr": "nulle part", "de": "nirgends, nirgendwo"}, {"fr": "accéder à", "de": "Zugang erlangen"}, {"fr": "un accès (à l’internet)", "de": "ein (Internet-)Zugang"}, {"fr": "apprendre par coeur", "de": "auswendig lernen"}, {"fr": "un oeil-les yeux (pl.m)", "de": "ein Auge-die Augen"}, {"fr": "la vue", "de": "der Blick/das Sehen"}, {"fr": "voir", "de": "sehen"}, {"fr": "regarder", "de": "anschauen/schauen"}, {"fr": "le son", "de": "der Ton/Klang"}, {"fr": "sonner", "de": "tönen/läuten/klingeln"}, {"fr": "une oreille", "de": "ein Ohr"}, {"fr": "écouter", "de": "(zu-)hören"}, {"fr": "entendre", "de": "hören"}, {"fr": "une odeur", "de": "ein Geruch"}, {"fr": "un goût", "de": "ein Geschmack"}, {"fr": "ensemble", "de": "gemeinsam"}, {"fr": "parfois/de temps en temps", "de": "bisweilen/ hie und da,/ ab und zu"}, {"fr": "entier/entière (adj.)", "de": "ganz, gesamt"}, {"fr": "le lait entier", "de": "die Vollmilch"}, {"fr": "le monde entier", "de": "die ganze Welt"}, {"fr": "tout le monde (3. pers.sg.!)", "de": "jedermann; alle"}, {"fr": "quand, comment, où, pourquoi, combien, quel(s) quelle(s)", "de": "wann, wie, wo, warum, wieviel, welche"}, {"fr": "les aliments (m. pl.)", "de": "die Nahrungsmittel"}, {"fr": "le légume", "de": "das Gemüse"}, {"fr": "l’épinard (m.)", "de": "der Spinat"}, {"fr": "l’ail (m.)", "de": "der Knoblauch"}, {"fr": "la courgette", "de": "die Zucchetti"}, {"fr": "une asperge", "de": "eine Spargel"}, {"fr": "le chou", "de": "der Kohl"}, {"fr": "la pomme de terre", "de": "die Kartoffel"}, {"fr": "la tomate", "de": "die Tomate"}, {"fr": "la carotte", "de": "die Karotte"}, {"fr": "le champignon", "de": "der Pilz"}, {"fr": "l’oignon (m.)", "de": "die Zwiebel"}, {"fr": "le produit laitier", "de": "das Milchprodukt"}, {"fr": "le beurre", "de": "die Butter"}, {"fr": "la crème", "de": "der Rahm"}, {"fr": "le yaourt", "de": "das Joghurt"}, {"fr": "le fromage (la fondue, la raclette)", "de": "der Käse (das Fondue, das Raclette)"}, {"fr": "les fruits (m.pl.)", "de": "die Früchte"}, {"fr": "la fraise", "de": "die Erdbeere"}, {"fr": "la framboise", "de": "die Himbeere"}, {"fr": "la pomme", "de": "der Apfel"}, {"fr": "la poire", "de": "die Birne"}, {"fr": "le raisin", "de": "die Traube"}, {"fr": "l’abricot (m.)", "de": "die Aprikose"}, {"fr": "une orange", "de": "eine Orange"}, {"fr": "un citron", "de": "die Zitrone"}, {"fr": "un melon", "de": "eine Melone"}, {"fr": "une banane", "de": "eine Banane"}, {"fr": "un ananas", "de": "eine Ananas"}, {"fr": "une prune", "de": "eine Zwetschge"}, {"fr": "le pain", "de": "das Brot"}, {"fr": "le croissant", "de": "das Gipfeli"}, {"fr": "la baguette", "de": "das Stangenbrot, das Baguette"}, {"fr": "une tartine (de miel)", "de": "ein Brot mit Aufstrich (Honigbrot)"}, {"fr": "le muesli", "de": "das Müsli"}, {"fr": "cru, crue (adj.)", "de": "roh"}, {"fr": "cuit,e (adj.)", "de": "gekocht"}, {"fr": "le miel", "de": "der Honig"}, {"fr": "un œuf", "de": "ein Ei"}, {"fr": "la viande (la viande séchée)", "de": "das Fleisch (das Trockenfleisch)"}, {"fr": "la confiture", "de": "die Marmelade, die Konfitüre"}, {"fr": "le petit déjeuner, le déjeuner, le dîner", "de": "das Frühstück, das Mittagessen, das Abendessen"}, {"fr": "un repas", "de": "das Essen, die Mahlzeit"}, {"fr": "une boisson", "de": "ein Getränk"}, {"fr": "le plat (le plat préféré)", "de": "das Gericht (das Lieblingsessen)"}, {"fr": "un escargot", "de": "eine Schnecke"}, {"fr": "le saumon", "de": "der Lachs"}, {"fr": "le poireau", "de": "der Lauch"}, {"fr": "un filet de bœuf", "de": "ein Rinderfilet"}, {"fr": "faire un barbecue / une grillade", "de": "grillen"}, {"fr": "une épice, épicer", "de": "ein Gewürz, würzen"}, {"fr": "pimenté,e (adj.)", "de": "pikant, scharf (kulinarisch)"}, {"fr": "la volaille", "de": "das Geflügel"}, {"fr": "le poisson", "de": "der Fisch"}, {"fr": "le veau", "de": "das Kalb"}, {"fr": "la tarte", "de": "flacher Obstkuchen"}, {"fr": "le gâteau", "de": "der Kuchen"}, {"fr": "une carafe (d’eau)", "de": "eine Karaffe (Wasser)"}, {"fr": "oublier", "de": "vergessen"}, {"fr": "s’intéresser à", "de": "sich interessieren für"}, {"fr": "je m’intéresse aux langues", "de": "ich interessiere mich für Sprachen"}, {"fr": "bon/bonne (adj.)", "de": "gut, gütig"}, {"fr": "gentil/gentille (adj.)", "de": "nett, freundlich"}, {"fr": "méchant/méchante (adj.)", "de": "böse, gemein, boshaft"}, {"fr": "aimable (adj.)", "de": "liebenswürdig, freundlich"}, {"fr": "cher/chère (adj.)", "de": "lieb, teuer"}, {"fr": "être fier/fière de", "de": "stolz sein auf"}, {"fr": "paresseux/paresseuse (adj.)", "de": "faul"}, {"fr": "patient,e(adj.)", "de": "geduldig"}, {"fr": "impatient,e (adj.)", "de": "ungeduldig"}, {"fr": "la patience", "de": "die Geduld"}, {"fr": "prudent,e (adj.)", "de": "vorsichtig"}, {"fr": "adroit,e (adj.)", "de": "geschickt"}, {"fr": "aimer", "de": "lieben, mögen, gerne tun"}, {"fr": "il aime danser", "de": "er tanzt gerne"}, {"fr": "l’amour m.", "de": "die Liebe"}, {"fr": "être content/contente de", "de": "zufrieden sein mit"}, {"fr": "heureux/heureuse (adj.)", "de": "glücklich"}, {"fr": "malheureux-malheureuse (adj.", "de": "unglücklich"}, {"fr": "la joie", "de": "die Freude, das Vergnügen"}, {"fr": "le plaisir", "de": "das Vergnügen, die Freude"}, {"fr": "agréable m,f (adj.)", "de": "angenehm"}, {"fr": "désagréable m,f (adj.)", "de": "unangenehm"}, {"fr": "avoir envie de", "de": "Lust haben auf"}, {"fr": "l’espoir (m.)", "de": "die Hoffnung"}, {"fr": "espérer", "de": "hoffen"}, {"fr": "la surprise", "de": "die Überraschung"}, {"fr": "surprendre", "de": "überraschen"}, {"fr": "triste m,f (adj.)", "de": "traurig"}, {"fr": "regretter", "de": "bedauern"}, {"fr": "détester, haïr", "de": "verabscheuen, hassen"}]''')
 VERSION = "dev"
+
+# Weitere fest eingebaute Sets (im Menü unter Voci-Sets an- und abwählbar)
+EINGEBAUTE_SETS = [
+    {"id": "fragewoerter", "name": "Fragewörter", "vocab": [
+        {"fr": "Où", "de": "Wo / Wohin"},
+        {"fr": "Qui", "de": "Wer / Wen"},
+        {"fr": "Quand", "de": "Wann"},
+        {"fr": "Que", "de": "Was"},
+        {"fr": "Qu'est-ce que", "de": "Was"},
+        {"fr": "Comment", "de": "Wie"},
+        {"fr": "Combien", "de": "Wie viel / Wie viele"},
+        {"fr": "Pourquoi", "de": "Warum"},
+        {"fr": "Quel", "de": "Welcher / Was für ein"},
+        {"fr": "Quelle", "de": "Welche / Was für eine"},
+    ]},
+]
 
 # Fenstersymbol (Trikolore) als eingebettetes PNG.
 ICON_B64 = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAEbklEQVR4nO2bT2gcVRzHv7/fm5ndpGlim6QEogfRgxikIInEgiJWaVMlImVDb71II1QEwVOKBxFz8iJYSAseUgRrlkBTS2qxmoqXgLmUoigULybSNn/dJLs7b+a9n4fd1QhpspjUZzbzYeeyvH3zfZ99w8xhvoR/QsAIA31GRPjpo5+9encpPl4I4+4osg8LpB6Q0rB1UIoQ/xHiwlAPXn/5UURG4Kn1x1aNMYBS0F9PYOXtAVBTY+m7DWAgT743Tan0pOxrGP147PMr7xNZARQAS6VFVBZcQQggMCAdh4dfm16Iz6zmbZc2BNgYgFnzs/UhRZClIkYu9CLT8xiMBRRvYfEAYC3AjOjqdeTeeAf0UNPmAgjwiBAwI1IKJp36odCy/8O28S/GpLzmigReu3iRCdX27KdDv/wulxZztktHoUCKBhQLqDx6g4O5fPYyIpsYq4byHFJZWRWHJUIIyLI1pqC1pJZXu5pn7l6ae/6VoRsiqjwflQUIAX0sMqHanrk9emfB79fFlRgILYgIIAXQFvfxfw8BRCDFRLQMsbliIW5eXO5/6lDP6A2ZUABYAGJksszImvbu22dnc6leq3MaTB5AW928/xsYYDB781rr5pVC7xPPfXSWAINMhhnZPvPkS8PHZpf9U1bnIjAFrgM/KIgpWNRh1LqSP3XvaN8xymYNT01N+b/dKwxGYSTg2vnX74dl4jgMBXPzg1NT53w+OfDjkbxWByGhoHSbqGkIUCtipV5HB9ve+/YIzy3oE1FMAtrsJldDEMQ3Vvxc7oRX1LYbVqj0CLBbINbWEIW624uNbQcsduKt7t9CAMUiIGPbGaD0Ltr8f2EFACS9i7b9+iQCXAdwTSLAdQDXJAJcB3BNIsB1ANckAlwHcE0iwHUA1yQCXAdwTSLAdQDXJAJcB3BNIsB1ANckAlwHcE0iwHUA1yQCXAdwTSLAdQDXJAJcB3BNIsB1ANckAlwHcE0iwHUA1yQCXAdwTSLAdQDXMCDF+3SgappSs4eK7CmeKb0lvx0Fn52BAOIRQRTPcDrgSbAnKL0xvUsQG7ASSQWT3LI/uOh7QpBddCEIKFJMUWPjRR4e7LhWH5iboBQB2LiQVwMIYBqIKR/4N+988OI17uzsjB45UDfgp3yClZq/DNiK9VIpQkvzQGdnf8TIjKifrp8cb90bneeg0YcV7Trkg0Ks6H1Byp9tqD9/4KuRcclkFCObsRYZNTP5+OnWxvAyB40BrMRA7ewGC1hYGzcHQTDfUHf55+/fPS2AQjZrPYAEEEtEEJk43n7o10/mlhr6tY4ACQUEC4B3WqVGSh8rAt5LzCpdx/NNe87d+u7KWy8QGaDUH/ZKw0kAISIyDLzZcXj46vQCn1nNp7q0IVVtedoSKl2U0qzb4aw8B6E8d+XYgHJ5mgJWKlIK4drydDlUpTztrTmTACCLEXXrm74xEfny7/q8dEcRVVefjzwwCawxiI0A21Sfjwmwe+pA9elN2+MA8pHvTcdV1Of/BKK/3Wv1D3rrAAAAAElFTkSuQmCC"
@@ -86,10 +102,11 @@ THEMEN = {
         "gruen": (52, 199, 89),     # Schalter an
         "grau": (209, 209, 214),    # Schalter aus
         "schatten": (0, 0, 0, 46),
-        "glas": (255, 255, 255, 150),        # durchscheinende Fläche
-        "glas_rand": (255, 255, 255, 210),
-        "glas_schein": (255, 255, 255, 110), # Lichtschein oben links
-        "glas_gruppe": (255, 255, 255, 120),
+        "glas": (255, 255, 255, 150),        # Milchglas ohne System-Unschärfe
+        "glas_duenn": (255, 255, 255, 70),   # Tönung, wenn das System selbst blurt
+        "glas_kante": (255, 255, 255, 240),  # Lichtkante oben links
+        "glas_kante_schwach": (255, 255, 255, 120),
+        "glas_gruppe": (255, 255, 255, 110),
     },
     "dunkel": {
         "bg": (0, 0, 0),
@@ -103,10 +120,11 @@ THEMEN = {
         "gruen": (48, 209, 88),
         "grau": (57, 57, 61),
         "schatten": (0, 0, 0, 110),
-        "glas": (18, 18, 24, 150),
-        "glas_rand": (255, 255, 255, 70),
-        "glas_schein": (255, 255, 255, 34),
-        "glas_gruppe": (255, 255, 255, 26),
+        "glas": (14, 16, 28, 150),
+        "glas_duenn": (255, 255, 255, 12),
+        "glas_kante": (255, 255, 255, 180),
+        "glas_kante_schwach": (255, 255, 255, 90),
+        "glas_gruppe": (255, 255, 255, 22),
     },
 }
 MAC_ROT = (255, 95, 87)             # Schliessknopf beim Hovern
@@ -747,9 +765,27 @@ def flaechenfarbe(t, glas, schluessel="bg"):
     return hexc(t[schluessel])
 
 
-def glas_flaeche(p, rect, t, radius, tint=None):
-    """Durchscheinende Fläche mit Lichtschein oben links und hellem Rand."""
-    grund = list(t["glas"])
+def schatten_ring(p, rect, t, tief=False):
+    """Weicher Schatten um die Fläche; im Glas-Stil tiefer und nach unten
+    versetzt (wie 0 24px 48px)."""
+    grund = qfarbe(t["schatten"])
+    versatz = 8 if tief else 2
+    for i in range(SCHATTEN - (2 if tief else 4), 0, -2):
+        w = QColor(grund)
+        w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2
+                       * (0.7 if tief else 0.5)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(w)
+        p.drawRoundedRect(rect.adjusted(-i, -i + versatz, i, i + versatz),
+                          RADIUS + i, RADIUS + i)
+
+
+def glas_flaeche(p, rect, t, radius, tint=None, duenn=False):
+    """Glas-Material in drei Schichten wie im Liquid-Glass-CSS:
+    fast durchsichtige Tönung (Frost), ein weicher Lichtsaum nach innen
+    (inset 0 0 24px) und die helle Kante, die oben links am stärksten
+    leuchtet (Lichtquelle) und unten rechts nur noch schwach."""
+    grund = list(t["glas_duenn"] if duenn else t["glas"])
     if tint:
         grund[:3] = tint
     pfad = QPainterPath()
@@ -757,30 +793,109 @@ def glas_flaeche(p, rect, t, radius, tint=None):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(qfarbe(grund))
     p.drawPath(pfad)
-    schein = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    schein.setColorAt(0.0, qfarbe(t["glas_schein"]))
-    schein.setColorAt(0.55, QColor(255, 255, 255, 0))
-    p.setBrush(schein)
-    p.drawPath(pfad)
+
+    p.save()
+    p.setClipPath(pfad)
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(qfarbe(t["glas_rand"]), 1))
-    p.drawRoundedRect(rect, radius, radius)
+    # innerer Lichtsaum: Ringe nach innen, aussen am hellsten
+    for k in range(11):
+        a = int(t["glas_kante"][3] * 0.06 * (1 - k / 11) ** 1.5)
+        if a <= 0:
+            break
+        p.setPen(QPen(QColor(255, 255, 255, a), 2))
+        e = 1 + 2 * k
+        p.drawRoundedRect(rect.adjusted(e, e, -e, -e),
+                          max(2, radius - e), max(2, radius - e))
+    # Lichtkante entlang des Rands
+    kante = QLinearGradient(rect.topLeft(), rect.bottomRight())
+    schwach = t["glas_kante_schwach"]
+    kante.setColorAt(0.0, qfarbe(t["glas_kante"]))
+    kante.setColorAt(0.5, qfarbe(schwach[:3] + (int(schwach[3] * 0.4),)))
+    kante.setColorAt(1.0, qfarbe(schwach))
+    p.setPen(QPen(QBrush(kante), 1.6))
+    p.drawRoundedRect(rect.adjusted(0.8, 0.8, -0.8, -0.8), radius, radius)
+    p.restore()
 
 
-def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True, glas=False):
+def glas_rahmen_css(t):
+    """Kanten für Gruppen und Felder im Glas-Stil: oben/links hell,
+    unten/rechts schwach - wie der inset-Schein der Glas-Knöpfe."""
+    hell = "rgba(255,255,255,%d)" % int(t["glas_kante"][3] * 0.55)
+    schwach = "rgba(255,255,255,%d)" % int(t["glas_kante_schwach"][3] * 0.35)
+    return ("border: 1px solid %s; border-top-color: %s; border-left-color: %s;"
+            % (schwach, hell, hell))
+
+
+def system_glas(fenster, an, thema):
+    """Echte Unschärfe hinter dem Fenster - gibt es nur über das System.
+    Windows: DWM-Acrylic per SetWindowCompositionAttribute. Liefert True,
+    wenn sie aktiv ist; sonst bleibt der Milchglas-Rückfall."""
+    if not IS_WIN:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class Accent(ctypes.Structure):
+            _fields_ = [("AccentState", wintypes.DWORD),
+                        ("AccentFlags", wintypes.DWORD),
+                        ("GradientColor", wintypes.DWORD),
+                        ("AnimationId", wintypes.DWORD)]
+
+        class Daten(ctypes.Structure):
+            _fields_ = [("Attribute", wintypes.DWORD),
+                        ("Data", ctypes.POINTER(Accent)),
+                        ("SizeOfData", wintypes.ULONG)]
+
+        accent = Accent()
+        accent.AccentState = 4 if an else 0   # ACRYLICBLURBEHIND / DISABLED
+        accent.AccentFlags = 0
+        # Tönung als 0xAABBGGRR
+        accent.GradientColor = 0x50201812 if thema == "dunkel" else 0x70F6F4F4
+        daten = Daten()
+        daten.Attribute = 19                   # WCA_ACCENT_POLICY
+        daten.Data = ctypes.pointer(accent)
+        daten.SizeOfData = ctypes.sizeof(accent)
+        fn = ctypes.windll.user32.SetWindowCompositionAttribute
+        fn.argtypes = [wintypes.HWND, ctypes.POINTER(Daten)]
+        fn.restype = wintypes.BOOL
+        return bool(fn(wintypes.HWND(int(fenster.winId())),
+                       ctypes.byref(daten))) and an
+    except Exception:
+        return False
+
+
+def glas_maske(fenster, an):
+    """Mit System-Unschärfe wird das Fenster auf die runde Karte beschnitten,
+    sonst würde der Blur auch den Schattenrand füllen."""
+    if an:
+        r = QRectF(SCHATTEN, SCHATTEN, fenster.width() - 2 * SCHATTEN,
+                   fenster.height() - 2 * SCHATTEN)
+        pfad = QPainterPath()
+        pfad.addRoundedRect(r, RADIUS, RADIUS)
+        fenster.setMask(QRegion(pfad.toFillPolygon().toPolygon()))
+    else:
+        fenster.clearMask()
+
+
+def glas_anwenden(fenster):
+    """Systemunschärfe und Maske für ein Fenster nach dem aktuellen
+    Zustand setzen; merkt sich, ob das System mitspielt."""
+    an = fenster.app.einst["glas"]
+    fenster.system_glas = system_glas(fenster, an, fenster.app.thema)
+    glas_maske(fenster, an and fenster.system_glas)
+
+
+def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True, glas=False,
+                   system=False):
     """Weicher Schatten, Kartenfläche, Haarlinie – gemeinsame Basis aller
     Fenster. Liefert das innere Karten-Rechteck."""
     t = THEMEN[thema]
     rect = QRectF(SCHATTEN, SCHATTEN, breite - 2 * SCHATTEN, hoehe - 2 * SCHATTEN)
-    grund = qfarbe(t["schatten"])
-    for i in range(SCHATTEN - 4, 0, -2) if mit_schatten else ():
-        w = QColor(grund)
-        w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2 * 0.5))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(w)
-        p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2), RADIUS + i, RADIUS + i)
+    if mit_schatten and not system:
+        schatten_ring(p, rect, t, tief=glas)
     if glas:
-        glas_flaeche(p, rect, t, RADIUS)
+        glas_flaeche(p, rect, t, RADIUS, duenn=system)
         return rect
     p.setBrush(qfarbe(t["bg"]))
     p.setPen(QPen(qfarbe(t["rand"]), 1))
@@ -803,6 +918,8 @@ class Panel(QWidget):
         self.resize(breite + 2 * SCHATTEN, hoehe + 2 * SCHATTEN)
         self._zieh = None
         self._x_heiss = False
+        self.system_glas = False
+        glas_anwenden(self)
         self.setMouseTracking(True)
 
         self.inhalt = QWidget(self)
@@ -816,7 +933,8 @@ class Panel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         t = THEMEN[self.app.thema]
         rect = panel_zeichnen(p, self.width(), self.height(), self.app.thema,
-                              self.app.einst["schatten"], self.app.einst["glas"])
+                              self.app.einst["schatten"], self.app.einst["glas"],
+                              getattr(self, "system_glas", False))
         p.setPen(qfarbe(t["fg"]))
         p.setFont(basisfont(15, fett=True))
         p.drawText(QRectF(rect.x() + 16, rect.y() + 8, rect.width() - 60, 28),
@@ -842,6 +960,8 @@ class Panel(QWidget):
         self.inhalt.setGeometry(SCHATTEN + 16, SCHATTEN + 40,
                                 self.width() - 2 * SCHATTEN - 32,
                                 self.height() - 2 * SCHATTEN - 52)
+        if getattr(self, "system_glas", False):
+            glas_maske(self, True)
 
     # -- Maus: X, sonst ziehen
     def mousePressEvent(self, e):
@@ -1114,10 +1234,14 @@ class Gruppe(QFrame):
         super().__init__()
         self.app = app
         t = THEMEN[app.thema]
-        self.setStyleSheet("QFrame { background: %s; border-radius: 10px; }"
-                           % flaechenfarbe(t, app.einst["glas"], "gruppe"))
+        self.setStyleSheet("QFrame { background: %s; border-radius: 10px; %s }"
+                           % (flaechenfarbe(t, app.einst["glas"], "gruppe"),
+                              glas_rahmen_css(t) if app.einst["glas"] else ""))
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 2, 12, 2)
+        # Im Glas-Stil hat die Gruppe eine 1-px-Kante; die Innenabstände
+        # gehen um genau die zurück, damit nichts abgeschnitten wird.
+        k = 1 if app.einst["glas"] else 0
+        lay.setContentsMargins(14 - k, 2, 12 - k, 2)
         lay.setSpacing(0)
         self.lay = lay
         self._erste = True
@@ -1955,6 +2079,8 @@ class Karte(QWidget):
         self.anim_schreib = None
         self._feld_stil()
         self._feld_platzieren()
+        self.system_glas = False
+        glas_anwenden(self)
 
     def schreib_animieren(self, an):
         start, ziel = self.schreib_anteil, (1.0 if an else 0.0)
@@ -1976,12 +2102,13 @@ class Karte(QWidget):
     def _feld_stil(self, status=None):
         t = THEMEN[self.app.thema]
         farbe = ANTWORT_FARBE[status] if status else t["fg"]
+        glas = self.app.einst["glas"]
+        rahmen = glas_rahmen_css(t) if glas else "border: 1px solid %s;" % hexc(t["rand"])
         self.feld.setStyleSheet(
-            "QLineEdit { color: %s; background: %s; border: 1px solid %s;"
+            "QLineEdit { color: %s; background: %s; %s"
             " border-radius: 20px; padding: 0 14px; selection-background-color: %s; }"
             "QLineEdit:focus { border: 1px solid %s; }"
-            % (hexc(farbe), flaechenfarbe(t, self.app.einst["glas"], "gruppe"),
-               hexc(t["rand"]),
+            % (hexc(farbe), flaechenfarbe(t, glas, "gruppe"), rahmen,
                hexc(t["akzent"]), hexc(t["akzent"])))
 
     def _feld_platzieren(self):
@@ -2102,19 +2229,12 @@ class Karte(QWidget):
 
         # Der Schatten liegt in den transformierten Koordinaten und dreht
         # deshalb beim Flip mit; abschaltbar im Menü.
-        if a.einst["schatten"]:
-            grund = qfarbe(t["schatten"])
-            for i in range(SCHATTEN - 4, 0, -2):
-                w = QColor(grund)
-                w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2 * 0.5))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(w)
-                p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2),
-                                  RADIUS + i, RADIUS + i)
+        if a.einst["schatten"] and not self.system_glas:
+            schatten_ring(p, rect, t, tief=a.einst["glas"])
         if a.einst["glas"]:
             tint = (blend(t["glas"][:3], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
                     if a.blitz else None)
-            glas_flaeche(p, rect, t, RADIUS, tint)
+            glas_flaeche(p, rect, t, RADIUS, tint, duenn=self.system_glas)
         else:
             flaeche = (blend(t["bg"], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
                        if a.blitz else t["bg"])
@@ -2484,6 +2604,8 @@ class Karte(QWidget):
     def resizeEvent(self, _):
         self._wrapcache.clear()
         self._feld_platzieren()
+        if self.system_glas:
+            glas_maske(self, True)
 
 
 # ---------------------------------------------------------------- Anwendung
@@ -2663,6 +2785,12 @@ class Voci:
         self.vocab = list(lade_vokabeln())
         self.sets = [{"id": "etape1", "name": "Étape 1",
                       "indizes": list(range(len(self.vocab))), "eigen": False}]
+        for satz in EINGEBAUTE_SETS:
+            start = len(self.vocab)
+            self.vocab.extend(satz["vocab"])
+            self.sets.append({"id": satz["id"], "name": satz["name"],
+                              "indizes": list(range(start, len(self.vocab))),
+                              "eigen": False})
         for satz in lade_eigene_sets():
             start = len(self.vocab)
             self.vocab.extend(satz["vocab"])
@@ -2920,19 +3048,22 @@ class Voci:
     def glas_umschalten(self):
         self.einst["glas"] = not self.einst["glas"]
         speichere_einstellungen(self.einst)
-        self.karte._feld_stil(self.antwort_status)
-        self.karte.update()
+        self._glas_nachziehen()
         self.menu_neu_aufbauen()
-        for fenster in (self.hinweis,):
+
+    def _glas_nachziehen(self):
+        """Karte und offene Fenster auf den aktuellen Glas-Zustand bringen."""
+        self.karte._feld_stil(self.antwort_status)
+        for fenster in (self.karte, self.hinweis):
             if fenster:
+                glas_anwenden(fenster)
                 fenster.update()
 
     def toggle_thema(self):
         self.thema = "dunkel" if self.thema == "hell" else "hell"
         self.einst["thema"] = self.thema
         speichere_einstellungen(self.einst)
-        self.karte._feld_stil(self.antwort_status)
-        self.karte.update()
+        self._glas_nachziehen()
         self.menu_neu_aufbauen()
 
     def einstellung_kippen(self, name, schluessel):

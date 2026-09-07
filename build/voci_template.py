@@ -45,7 +45,7 @@ try:
                                 QEasingCurve, QSize, QEvent, QObject)
     from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication,
                                QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
-                               QTransform, QLinearGradient)
+                               QTransform, QLinearGradient, QBrush, QRegion)
     from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame,
                                    QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
@@ -64,6 +64,22 @@ except ImportError:                                  # Python-Fassung ohne PySid
 
 EINGEBAUTE_VOCAB = json.loads(r'''__VOCAB_JSON__''')
 VERSION = "__VERSION__"
+
+# Weitere fest eingebaute Sets (im Menü unter Voci-Sets an- und abwählbar)
+EINGEBAUTE_SETS = [
+    {"id": "fragewoerter", "name": "Fragewörter", "vocab": [
+        {"fr": "Où", "de": "Wo / Wohin"},
+        {"fr": "Qui", "de": "Wer / Wen"},
+        {"fr": "Quand", "de": "Wann"},
+        {"fr": "Que", "de": "Was"},
+        {"fr": "Qu'est-ce que", "de": "Was"},
+        {"fr": "Comment", "de": "Wie"},
+        {"fr": "Combien", "de": "Wie viel / Wie viele"},
+        {"fr": "Pourquoi", "de": "Warum"},
+        {"fr": "Quel", "de": "Welcher / Was für ein"},
+        {"fr": "Quelle", "de": "Welche / Was für eine"},
+    ]},
+]
 
 # Fenstersymbol (Trikolore) als eingebettetes PNG.
 ICON_B64 = "__ICON_B64__"
@@ -86,10 +102,11 @@ THEMEN = {
         "gruen": (52, 199, 89),     # Schalter an
         "grau": (209, 209, 214),    # Schalter aus
         "schatten": (0, 0, 0, 46),
-        "glas": (255, 255, 255, 150),        # durchscheinende Fläche
-        "glas_rand": (255, 255, 255, 210),
-        "glas_schein": (255, 255, 255, 110), # Lichtschein oben links
-        "glas_gruppe": (255, 255, 255, 120),
+        "glas": (255, 255, 255, 150),        # Milchglas ohne System-Unschärfe
+        "glas_duenn": (255, 255, 255, 70),   # Tönung, wenn das System selbst blurt
+        "glas_kante": (255, 255, 255, 240),  # Lichtkante oben links
+        "glas_kante_schwach": (255, 255, 255, 120),
+        "glas_gruppe": (255, 255, 255, 110),
     },
     "dunkel": {
         "bg": (0, 0, 0),
@@ -103,10 +120,11 @@ THEMEN = {
         "gruen": (48, 209, 88),
         "grau": (57, 57, 61),
         "schatten": (0, 0, 0, 110),
-        "glas": (18, 18, 24, 150),
-        "glas_rand": (255, 255, 255, 70),
-        "glas_schein": (255, 255, 255, 34),
-        "glas_gruppe": (255, 255, 255, 26),
+        "glas": (14, 16, 28, 150),
+        "glas_duenn": (255, 255, 255, 12),
+        "glas_kante": (255, 255, 255, 180),
+        "glas_kante_schwach": (255, 255, 255, 90),
+        "glas_gruppe": (255, 255, 255, 22),
     },
 }
 MAC_ROT = (255, 95, 87)             # Schliessknopf beim Hovern
@@ -747,9 +765,27 @@ def flaechenfarbe(t, glas, schluessel="bg"):
     return hexc(t[schluessel])
 
 
-def glas_flaeche(p, rect, t, radius, tint=None):
-    """Durchscheinende Fläche mit Lichtschein oben links und hellem Rand."""
-    grund = list(t["glas"])
+def schatten_ring(p, rect, t, tief=False):
+    """Weicher Schatten um die Fläche; im Glas-Stil tiefer und nach unten
+    versetzt (wie 0 24px 48px)."""
+    grund = qfarbe(t["schatten"])
+    versatz = 8 if tief else 2
+    for i in range(SCHATTEN - (2 if tief else 4), 0, -2):
+        w = QColor(grund)
+        w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2
+                       * (0.7 if tief else 0.5)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(w)
+        p.drawRoundedRect(rect.adjusted(-i, -i + versatz, i, i + versatz),
+                          RADIUS + i, RADIUS + i)
+
+
+def glas_flaeche(p, rect, t, radius, tint=None, duenn=False):
+    """Glas-Material in drei Schichten wie im Liquid-Glass-CSS:
+    fast durchsichtige Tönung (Frost), ein weicher Lichtsaum nach innen
+    (inset 0 0 24px) und die helle Kante, die oben links am stärksten
+    leuchtet (Lichtquelle) und unten rechts nur noch schwach."""
+    grund = list(t["glas_duenn"] if duenn else t["glas"])
     if tint:
         grund[:3] = tint
     pfad = QPainterPath()
@@ -757,30 +793,109 @@ def glas_flaeche(p, rect, t, radius, tint=None):
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(qfarbe(grund))
     p.drawPath(pfad)
-    schein = QLinearGradient(rect.topLeft(), rect.bottomRight())
-    schein.setColorAt(0.0, qfarbe(t["glas_schein"]))
-    schein.setColorAt(0.55, QColor(255, 255, 255, 0))
-    p.setBrush(schein)
-    p.drawPath(pfad)
+
+    p.save()
+    p.setClipPath(pfad)
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.setPen(QPen(qfarbe(t["glas_rand"]), 1))
-    p.drawRoundedRect(rect, radius, radius)
+    # innerer Lichtsaum: Ringe nach innen, aussen am hellsten
+    for k in range(11):
+        a = int(t["glas_kante"][3] * 0.06 * (1 - k / 11) ** 1.5)
+        if a <= 0:
+            break
+        p.setPen(QPen(QColor(255, 255, 255, a), 2))
+        e = 1 + 2 * k
+        p.drawRoundedRect(rect.adjusted(e, e, -e, -e),
+                          max(2, radius - e), max(2, radius - e))
+    # Lichtkante entlang des Rands
+    kante = QLinearGradient(rect.topLeft(), rect.bottomRight())
+    schwach = t["glas_kante_schwach"]
+    kante.setColorAt(0.0, qfarbe(t["glas_kante"]))
+    kante.setColorAt(0.5, qfarbe(schwach[:3] + (int(schwach[3] * 0.4),)))
+    kante.setColorAt(1.0, qfarbe(schwach))
+    p.setPen(QPen(QBrush(kante), 1.6))
+    p.drawRoundedRect(rect.adjusted(0.8, 0.8, -0.8, -0.8), radius, radius)
+    p.restore()
 
 
-def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True, glas=False):
+def glas_rahmen_css(t):
+    """Kanten für Gruppen und Felder im Glas-Stil: oben/links hell,
+    unten/rechts schwach - wie der inset-Schein der Glas-Knöpfe."""
+    hell = "rgba(255,255,255,%d)" % int(t["glas_kante"][3] * 0.55)
+    schwach = "rgba(255,255,255,%d)" % int(t["glas_kante_schwach"][3] * 0.35)
+    return ("border: 1px solid %s; border-top-color: %s; border-left-color: %s;"
+            % (schwach, hell, hell))
+
+
+def system_glas(fenster, an, thema):
+    """Echte Unschärfe hinter dem Fenster - gibt es nur über das System.
+    Windows: DWM-Acrylic per SetWindowCompositionAttribute. Liefert True,
+    wenn sie aktiv ist; sonst bleibt der Milchglas-Rückfall."""
+    if not IS_WIN:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class Accent(ctypes.Structure):
+            _fields_ = [("AccentState", wintypes.DWORD),
+                        ("AccentFlags", wintypes.DWORD),
+                        ("GradientColor", wintypes.DWORD),
+                        ("AnimationId", wintypes.DWORD)]
+
+        class Daten(ctypes.Structure):
+            _fields_ = [("Attribute", wintypes.DWORD),
+                        ("Data", ctypes.POINTER(Accent)),
+                        ("SizeOfData", wintypes.ULONG)]
+
+        accent = Accent()
+        accent.AccentState = 4 if an else 0   # ACRYLICBLURBEHIND / DISABLED
+        accent.AccentFlags = 0
+        # Tönung als 0xAABBGGRR
+        accent.GradientColor = 0x50201812 if thema == "dunkel" else 0x70F6F4F4
+        daten = Daten()
+        daten.Attribute = 19                   # WCA_ACCENT_POLICY
+        daten.Data = ctypes.pointer(accent)
+        daten.SizeOfData = ctypes.sizeof(accent)
+        fn = ctypes.windll.user32.SetWindowCompositionAttribute
+        fn.argtypes = [wintypes.HWND, ctypes.POINTER(Daten)]
+        fn.restype = wintypes.BOOL
+        return bool(fn(wintypes.HWND(int(fenster.winId())),
+                       ctypes.byref(daten))) and an
+    except Exception:
+        return False
+
+
+def glas_maske(fenster, an):
+    """Mit System-Unschärfe wird das Fenster auf die runde Karte beschnitten,
+    sonst würde der Blur auch den Schattenrand füllen."""
+    if an:
+        r = QRectF(SCHATTEN, SCHATTEN, fenster.width() - 2 * SCHATTEN,
+                   fenster.height() - 2 * SCHATTEN)
+        pfad = QPainterPath()
+        pfad.addRoundedRect(r, RADIUS, RADIUS)
+        fenster.setMask(QRegion(pfad.toFillPolygon().toPolygon()))
+    else:
+        fenster.clearMask()
+
+
+def glas_anwenden(fenster):
+    """Systemunschärfe und Maske für ein Fenster nach dem aktuellen
+    Zustand setzen; merkt sich, ob das System mitspielt."""
+    an = fenster.app.einst["glas"]
+    fenster.system_glas = system_glas(fenster, an, fenster.app.thema)
+    glas_maske(fenster, an and fenster.system_glas)
+
+
+def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True, glas=False,
+                   system=False):
     """Weicher Schatten, Kartenfläche, Haarlinie – gemeinsame Basis aller
     Fenster. Liefert das innere Karten-Rechteck."""
     t = THEMEN[thema]
     rect = QRectF(SCHATTEN, SCHATTEN, breite - 2 * SCHATTEN, hoehe - 2 * SCHATTEN)
-    grund = qfarbe(t["schatten"])
-    for i in range(SCHATTEN - 4, 0, -2) if mit_schatten else ():
-        w = QColor(grund)
-        w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2 * 0.5))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(w)
-        p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2), RADIUS + i, RADIUS + i)
+    if mit_schatten and not system:
+        schatten_ring(p, rect, t, tief=glas)
     if glas:
-        glas_flaeche(p, rect, t, RADIUS)
+        glas_flaeche(p, rect, t, RADIUS, duenn=system)
         return rect
     p.setBrush(qfarbe(t["bg"]))
     p.setPen(QPen(qfarbe(t["rand"]), 1))
@@ -803,6 +918,8 @@ class Panel(QWidget):
         self.resize(breite + 2 * SCHATTEN, hoehe + 2 * SCHATTEN)
         self._zieh = None
         self._x_heiss = False
+        self.system_glas = False
+        glas_anwenden(self)
         self.setMouseTracking(True)
 
         self.inhalt = QWidget(self)
@@ -816,7 +933,8 @@ class Panel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         t = THEMEN[self.app.thema]
         rect = panel_zeichnen(p, self.width(), self.height(), self.app.thema,
-                              self.app.einst["schatten"], self.app.einst["glas"])
+                              self.app.einst["schatten"], self.app.einst["glas"],
+                              getattr(self, "system_glas", False))
         p.setPen(qfarbe(t["fg"]))
         p.setFont(basisfont(15, fett=True))
         p.drawText(QRectF(rect.x() + 16, rect.y() + 8, rect.width() - 60, 28),
@@ -842,6 +960,8 @@ class Panel(QWidget):
         self.inhalt.setGeometry(SCHATTEN + 16, SCHATTEN + 40,
                                 self.width() - 2 * SCHATTEN - 32,
                                 self.height() - 2 * SCHATTEN - 52)
+        if getattr(self, "system_glas", False):
+            glas_maske(self, True)
 
     # -- Maus: X, sonst ziehen
     def mousePressEvent(self, e):
@@ -1114,10 +1234,14 @@ class Gruppe(QFrame):
         super().__init__()
         self.app = app
         t = THEMEN[app.thema]
-        self.setStyleSheet("QFrame { background: %s; border-radius: 10px; }"
-                           % flaechenfarbe(t, app.einst["glas"], "gruppe"))
+        self.setStyleSheet("QFrame { background: %s; border-radius: 10px; %s }"
+                           % (flaechenfarbe(t, app.einst["glas"], "gruppe"),
+                              glas_rahmen_css(t) if app.einst["glas"] else ""))
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 2, 12, 2)
+        # Im Glas-Stil hat die Gruppe eine 1-px-Kante; die Innenabstände
+        # gehen um genau die zurück, damit nichts abgeschnitten wird.
+        k = 1 if app.einst["glas"] else 0
+        lay.setContentsMargins(14 - k, 2, 12 - k, 2)
         lay.setSpacing(0)
         self.lay = lay
         self._erste = True
@@ -1955,6 +2079,8 @@ class Karte(QWidget):
         self.anim_schreib = None
         self._feld_stil()
         self._feld_platzieren()
+        self.system_glas = False
+        glas_anwenden(self)
 
     def schreib_animieren(self, an):
         start, ziel = self.schreib_anteil, (1.0 if an else 0.0)
@@ -1976,12 +2102,13 @@ class Karte(QWidget):
     def _feld_stil(self, status=None):
         t = THEMEN[self.app.thema]
         farbe = ANTWORT_FARBE[status] if status else t["fg"]
+        glas = self.app.einst["glas"]
+        rahmen = glas_rahmen_css(t) if glas else "border: 1px solid %s;" % hexc(t["rand"])
         self.feld.setStyleSheet(
-            "QLineEdit { color: %s; background: %s; border: 1px solid %s;"
+            "QLineEdit { color: %s; background: %s; %s"
             " border-radius: 20px; padding: 0 14px; selection-background-color: %s; }"
             "QLineEdit:focus { border: 1px solid %s; }"
-            % (hexc(farbe), flaechenfarbe(t, self.app.einst["glas"], "gruppe"),
-               hexc(t["rand"]),
+            % (hexc(farbe), flaechenfarbe(t, glas, "gruppe"), rahmen,
                hexc(t["akzent"]), hexc(t["akzent"])))
 
     def _feld_platzieren(self):
@@ -2102,19 +2229,12 @@ class Karte(QWidget):
 
         # Der Schatten liegt in den transformierten Koordinaten und dreht
         # deshalb beim Flip mit; abschaltbar im Menü.
-        if a.einst["schatten"]:
-            grund = qfarbe(t["schatten"])
-            for i in range(SCHATTEN - 4, 0, -2):
-                w = QColor(grund)
-                w.setAlpha(int(grund.alpha() * (1 - i / SCHATTEN) ** 2 * 0.5))
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(w)
-                p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2),
-                                  RADIUS + i, RADIUS + i)
+        if a.einst["schatten"] and not self.system_glas:
+            schatten_ring(p, rect, t, tief=a.einst["glas"])
         if a.einst["glas"]:
             tint = (blend(t["glas"][:3], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
                     if a.blitz else None)
-            glas_flaeche(p, rect, t, RADIUS, tint)
+            glas_flaeche(p, rect, t, RADIUS, tint, duenn=self.system_glas)
         else:
             flaeche = (blend(t["bg"], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
                        if a.blitz else t["bg"])
@@ -2484,6 +2604,8 @@ class Karte(QWidget):
     def resizeEvent(self, _):
         self._wrapcache.clear()
         self._feld_platzieren()
+        if self.system_glas:
+            glas_maske(self, True)
 
 
 # ---------------------------------------------------------------- Anwendung
@@ -2663,6 +2785,12 @@ class Voci:
         self.vocab = list(lade_vokabeln())
         self.sets = [{"id": "etape1", "name": "Étape 1",
                       "indizes": list(range(len(self.vocab))), "eigen": False}]
+        for satz in EINGEBAUTE_SETS:
+            start = len(self.vocab)
+            self.vocab.extend(satz["vocab"])
+            self.sets.append({"id": satz["id"], "name": satz["name"],
+                              "indizes": list(range(start, len(self.vocab))),
+                              "eigen": False})
         for satz in lade_eigene_sets():
             start = len(self.vocab)
             self.vocab.extend(satz["vocab"])
@@ -2920,19 +3048,22 @@ class Voci:
     def glas_umschalten(self):
         self.einst["glas"] = not self.einst["glas"]
         speichere_einstellungen(self.einst)
-        self.karte._feld_stil(self.antwort_status)
-        self.karte.update()
+        self._glas_nachziehen()
         self.menu_neu_aufbauen()
-        for fenster in (self.hinweis,):
+
+    def _glas_nachziehen(self):
+        """Karte und offene Fenster auf den aktuellen Glas-Zustand bringen."""
+        self.karte._feld_stil(self.antwort_status)
+        for fenster in (self.karte, self.hinweis):
             if fenster:
+                glas_anwenden(fenster)
                 fenster.update()
 
     def toggle_thema(self):
         self.thema = "dunkel" if self.thema == "hell" else "hell"
         self.einst["thema"] = self.thema
         speichere_einstellungen(self.einst)
-        self.karte._feld_stil(self.antwort_status)
-        self.karte.update()
+        self._glas_nachziehen()
         self.menu_neu_aufbauen()
 
     def einstellung_kippen(self, name, schluessel):
