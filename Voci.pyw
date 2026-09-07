@@ -47,7 +47,7 @@ try:
                                QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
                                QTransform, QLinearGradient)
     from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame,
-                                   QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
+                                   QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
 except ImportError:                                  # Python-Fassung ohne PySide6
     sys.stderr.write(
@@ -1946,8 +1946,32 @@ class Karte(QWidget):
         self.feld.setFrame(False)
         self.feld.returnPressed.connect(lambda: self.app.antworten(self.feld.text()))
         self.feld.hide()
+        # 0 = normale Karte, 1 = Schreibmodus; dazwischen läuft die Animation:
+        # der Text rückt hoch, das Feld gleitet von unten herein und blendet auf.
+        self.schreib_anteil = 1.0 if app.einst["schreibmodus"] else 0.0
+        self.feld_effekt = QGraphicsOpacityEffect(self.feld)
+        self.feld_effekt.setOpacity(self.schreib_anteil)
+        self.feld.setGraphicsEffect(self.feld_effekt)
+        self.anim_schreib = None
         self._feld_stil()
         self._feld_platzieren()
+
+    def schreib_animieren(self, an):
+        start, ziel = self.schreib_anteil, (1.0 if an else 0.0)
+
+        def schritt(w):
+            self.schreib_anteil = start + (ziel - start) * kurve(w)
+            self.feld_effekt.setOpacity(self.schreib_anteil)
+            self._feld_platzieren()
+            self.update()
+
+        def fertig():
+            self.schreib_anteil = ziel
+            self.feld_effekt.setOpacity(ziel)
+            self._feld_platzieren()
+            self.update()
+        self.anim_schreib = Ablauf(self, 300, schritt, fertig=fertig)
+        self.anim_schreib.start()
 
     def _feld_stil(self, status=None):
         t = THEMEN[self.app.thema]
@@ -1963,9 +1987,11 @@ class Karte(QWidget):
     def _feld_platzieren(self):
         r = self.karte_rect()
         breite = max(120, int(r.width() - 120))
-        # Deutlich über der Pfeil-Zeile, Richtung Kartenmitte
+        # Deutlich über der Pfeil-Zeile, Richtung Kartenmitte; während der
+        # Animation kommt es von etwas weiter unten herauf
+        versatz = (1.0 - self.schreib_anteil) * 28
         self.feld.setGeometry(int(r.center().x() - breite / 2),
-                              int(r.bottom() - 92), breite, 40)
+                              int(r.bottom() - 92 + versatz), breite, 40)
 
     def _feld_zeigen(self, an):
         """Feld nur im Ruhezustand zeigen - beim Flip dreht die Karte, das
@@ -2103,9 +2129,9 @@ class Karte(QWidget):
         zeilen, groesse = self.wrapped(a.word[a.side])
         p.setFont(basisfont(max(1, groesse)))
         p.setPen(qfarbe(t["fg"]))
-        schreib = a.einst["schreibmodus"]
-        textfeld = rect.adjusted(20, 20, -20, -100 if schreib else -20)
-        self._feld_zeigen(schreib)
+        anteil = self.schreib_anteil
+        textfeld = rect.adjusted(20, 20, -20, -int(20 + 80 * anteil))
+        self._feld_zeigen(anteil > 0.02)
         p.setOpacity(p.opacity() * self.wort_alpha)
         if self.versatz:
             # Der Text zieht durch die Karte; ausserhalb wird abgeschnitten,
@@ -2184,8 +2210,7 @@ class Karte(QWidget):
 
     def wortgroesse(self, text):
         r = self.karte_rect()
-        hoehe = r.height() - (80 if self.app.einst["schreibmodus"] else 0)
-        basis = min(r.width() / 19.0, hoehe / 11.5)
+        basis = min(r.width() / 19.0, r.height() / 11.5)
         n = len(text)
         if n > 70:
             basis *= 0.60
@@ -2426,10 +2451,11 @@ class Karte(QWidget):
             a.toggle_start()
         elif self.karte_rect().contains(e.position()):
             if a.einst["schreibmodus"]:
+                # Klick neben das Feld holt den Fokus aus dem Feld heraus
+                # (mousePress hat ihn schon auf die Karte gesetzt); ins Feld
+                # kommt man nur durch Klick ins Feld oder mit Tab.
                 if a.antwort_status:
                     a.schreib_weiter()
-                else:
-                    self.feld.setFocus()
             else:
                 a.flip()
 
@@ -2812,6 +2838,7 @@ class Voci:
         speichere_einstellungen(self.einst)
         self._antwort_zuruecksetzen(fokus=False)   # Einschalten: Karte behält Fokus
         self.karte._wrapcache.clear()
+        self.karte.schreib_animieren(self.einst["schreibmodus"])
         if self.einst["schreibmodus"] and self.side != self.start_side:
             def commit():
                 self.side = self.start_side
