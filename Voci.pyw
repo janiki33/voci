@@ -45,7 +45,7 @@ try:
                                 QEasingCurve, QSize, QEvent, QObject)
     from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication,
                                QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
-                               QTransform)
+                               QTransform, QLinearGradient)
     from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame,
                                    QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
@@ -86,6 +86,10 @@ THEMEN = {
         "gruen": (52, 199, 89),     # Schalter an
         "grau": (209, 209, 214),    # Schalter aus
         "schatten": (0, 0, 0, 46),
+        "glas": (255, 255, 255, 150),        # durchscheinende Fläche
+        "glas_rand": (255, 255, 255, 210),
+        "glas_schein": (255, 255, 255, 110), # Lichtschein oben links
+        "glas_gruppe": (255, 255, 255, 120),
     },
     "dunkel": {
         "bg": (0, 0, 0),
@@ -99,6 +103,10 @@ THEMEN = {
         "gruen": (48, 209, 88),
         "grau": (57, 57, 61),
         "schatten": (0, 0, 0, 110),
+        "glas": (18, 18, 24, 150),
+        "glas_rand": (255, 255, 255, 70),
+        "glas_schein": (255, 255, 255, 34),
+        "glas_gruppe": (255, 255, 255, 26),
     },
 }
 MAC_ROT = (255, 95, 87)             # Schliessknopf beim Hovern
@@ -214,6 +222,7 @@ STANDARD_EINSTELLUNGEN = {
     "bei_inaktiv_schliessen": False,  # Programm beim Raustabben beenden
     "reset_hinweis_aus": False,   # Rückfrage beim Zurücksetzen unterdrücken
     "schreibmodus": False,        # Übersetzung tippen statt aufdecken
+    "glas": False,                # alternativer Zeichenstil (nicht im Menü)
 }
 FESTE_TASTEN = {"D", "U", "M", "S"}  # dürfen nicht als Wertungstaste belegt werden
 
@@ -726,7 +735,39 @@ def basisfont(pixel, fett=False):
     return f
 
 
-def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True):
+def rgba(c):
+    return "rgba(%d,%d,%d,%d)" % (int(c[0]), int(c[1]), int(c[2]),
+                                  int(c[3]) if len(c) > 3 else 255)
+
+
+def flaechenfarbe(t, glas, schluessel="bg"):
+    """CSS-Farbe für Gruppen und Felder - deckend oder durchscheinend."""
+    if glas:
+        return rgba(t["glas_gruppe"] if schluessel == "gruppe" else t["glas"])
+    return hexc(t[schluessel])
+
+
+def glas_flaeche(p, rect, t, radius, tint=None):
+    """Durchscheinende Fläche mit Lichtschein oben links und hellem Rand."""
+    grund = list(t["glas"])
+    if tint:
+        grund[:3] = tint
+    pfad = QPainterPath()
+    pfad.addRoundedRect(rect, radius, radius)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(qfarbe(grund))
+    p.drawPath(pfad)
+    schein = QLinearGradient(rect.topLeft(), rect.bottomRight())
+    schein.setColorAt(0.0, qfarbe(t["glas_schein"]))
+    schein.setColorAt(0.55, QColor(255, 255, 255, 0))
+    p.setBrush(schein)
+    p.drawPath(pfad)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.setPen(QPen(qfarbe(t["glas_rand"]), 1))
+    p.drawRoundedRect(rect, radius, radius)
+
+
+def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True, glas=False):
     """Weicher Schatten, Kartenfläche, Haarlinie – gemeinsame Basis aller
     Fenster. Liefert das innere Karten-Rechteck."""
     t = THEMEN[thema]
@@ -738,6 +779,9 @@ def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(w)
         p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2), RADIUS + i, RADIUS + i)
+    if glas:
+        glas_flaeche(p, rect, t, RADIUS)
+        return rect
     p.setBrush(qfarbe(t["bg"]))
     p.setPen(QPen(qfarbe(t["rand"]), 1))
     p.drawRoundedRect(rect, RADIUS, RADIUS)
@@ -772,7 +816,7 @@ class Panel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         t = THEMEN[self.app.thema]
         rect = panel_zeichnen(p, self.width(), self.height(), self.app.thema,
-                              self.app.einst["schatten"])
+                              self.app.einst["schatten"], self.app.einst["glas"])
         p.setPen(qfarbe(t["fg"]))
         p.setFont(basisfont(15, fett=True))
         p.drawText(QRectF(rect.x() + 16, rect.y() + 8, rect.width() - 60, 28),
@@ -1071,7 +1115,7 @@ class Gruppe(QFrame):
         self.app = app
         t = THEMEN[app.thema]
         self.setStyleSheet("QFrame { background: %s; border-radius: 10px; }"
-                           % hexc(t["gruppe"]))
+                           % flaechenfarbe(t, app.einst["glas"], "gruppe"))
         lay = QVBoxLayout(self)
         lay.setContentsMargins(14, 2, 12, 2)
         lay.setSpacing(0)
@@ -1912,7 +1956,8 @@ class Karte(QWidget):
             "QLineEdit { color: %s; background: %s; border: 1px solid %s;"
             " border-radius: 20px; padding: 0 14px; selection-background-color: %s; }"
             "QLineEdit:focus { border: 1px solid %s; }"
-            % (hexc(farbe), hexc(t["gruppe"]), hexc(t["rand"]),
+            % (hexc(farbe), flaechenfarbe(t, self.app.einst["glas"], "gruppe"),
+               hexc(t["rand"]),
                hexc(t["akzent"]), hexc(t["akzent"])))
 
     def _feld_platzieren(self):
@@ -2039,11 +2084,16 @@ class Karte(QWidget):
                 p.setBrush(w)
                 p.drawRoundedRect(rect.adjusted(-i, -i + 2, i, i + 2),
                                   RADIUS + i, RADIUS + i)
-        flaeche = (blend(t["bg"], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
-                   if a.blitz else t["bg"])
-        p.setBrush(qfarbe(flaeche))
-        p.setPen(QPen(qfarbe(t["rand"]), 1))
-        p.drawRoundedRect(rect, RADIUS, RADIUS)
+        if a.einst["glas"]:
+            tint = (blend(t["glas"][:3], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
+                    if a.blitz else None)
+            glas_flaeche(p, rect, t, RADIUS, tint)
+        else:
+            flaeche = (blend(t["bg"], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
+                       if a.blitz else t["bg"])
+            p.setBrush(qfarbe(flaeche))
+            p.setPen(QPen(qfarbe(t["rand"]), 1))
+            p.drawRoundedRect(rect, RADIUS, RADIUS)
 
         if self.scale <= 0.12 or self.inhalt <= 0.02:
             return
@@ -2425,6 +2475,10 @@ class Tastenfilter(QObject):
         if ereignis.type() == QEvent.Type.KeyPress:
             taste = ereignis.key()
             a = self.app
+            if taste == Qt.Key.Key_G and \
+                    ereignis.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                a.glas_umschalten()
+                return True
             # Schreibmodus: Tab springt ins Eingabefeld und wieder heraus
             if taste in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab) \
                     and a.einst["schreibmodus"] and a.antwort_status is None \
@@ -2834,6 +2888,16 @@ class Voci:
             self.karte.aufdecken(commit)
         else:
             self.karte.update()
+
+    def glas_umschalten(self):
+        self.einst["glas"] = not self.einst["glas"]
+        speichere_einstellungen(self.einst)
+        self.karte._feld_stil(self.antwort_status)
+        self.karte.update()
+        self.menu_neu_aufbauen()
+        for fenster in (self.hinweis,):
+            if fenster:
+                fenster.update()
 
     def toggle_thema(self):
         self.thema = "dunkel" if self.thema == "hell" else "hell"
