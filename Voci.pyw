@@ -23,16 +23,19 @@ unten zählt runter) – ausser man tabbt vorher zurück.
 """
 
 import base64
+import difflib
 import json
 import math
 import os
 import pathlib
 import random
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import unicodedata
 import urllib.error
 import urllib.request
 import zipfile
@@ -44,7 +47,7 @@ try:
                                QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
                                QTransform)
     from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame,
-                                   QHBoxLayout, QLabel, QMenu, QPushButton,
+                                   QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
 except ImportError:                                  # Python-Fassung ohne PySide6
     sys.stderr.write(
@@ -210,8 +213,9 @@ STANDARD_EINSTELLUNGEN = {
     "schliess_knopf": True,       # X oben rechts zeigen
     "bei_inaktiv_schliessen": False,  # Programm beim Raustabben beenden
     "reset_hinweis_aus": False,   # Rückfrage beim Zurücksetzen unterdrücken
+    "schreibmodus": False,        # Übersetzung tippen statt aufdecken
 }
-FESTE_TASTEN = {"D", "U", "M"}    # dürfen nicht als Wertungstaste belegt werden
+FESTE_TASTEN = {"D", "U", "M", "S"}  # dürfen nicht als Wertungstaste belegt werden
 
 # Bewertung: c = kann ich noch nicht, v = neutral, b = kann ich schon.
 # Jeder Eintrag trägt einen Faktor (Start 1), der die Ziehungswahrscheinlichkeit
@@ -222,6 +226,78 @@ WERTUNG_BLITZ = {"c": (255, 105, 97), "v": (255, 214, 10), "b": (50, 215, 75)}
 FAKTOR_MIN, FAKTOR_MAX = 0.0, 3.0
 BLITZ_MS = 260                    # so lange leuchtet die Karte nach c/v/b
 BLITZ_ANTEIL = 0.2                # Farbanteil des Blitzes - bewusst dezent
+
+# Schreibmodus: Ergebnis -> Wertungstaste. Richtig zählt wie "kann ich",
+# fast richtig (Akzent, Tippfehler) neutral, falsch wie "kann ich nicht".
+ANTWORT_WERTUNG = {"richtig": "b", "fast": "v", "falsch": "c"}
+ANTWORT_FARBE = {"richtig": (40, 170, 60), "fast": (200, 150, 0),
+                 "falsch": (255, 105, 97)}
+ENDUNGEN = {"euse", "trice", "ienne", "onne", "elle", "ère", "ive", "ète"}
+ARTIKEL = ("le ", "la ", "les ", "l'", "un ", "une ", "des ", "der ", "die ",
+           "das ", "ein ", "eine ", "sich ", "se ", "s'")
+
+
+def _glatt(text):
+    """Vergleichsform: klein, ohne Rand- und Doppelleerzeichen, einheitliche
+    Apostrophe, keine Satzzeichen am Ende."""
+    text = text.replace("’", "'").replace("‘", "'").casefold()
+    text = re.sub(r"\s+", " ", text).strip().strip(".!?")
+    return text.strip()
+
+
+def _ohne_akzente(text):
+    return "".join(c for c in unicodedata.normalize("NFD", text)
+                   if unicodedata.category(c) != "Mn")
+
+
+def _ohne_artikel(text):
+    for a in ARTIKEL:
+        if text.startswith(a) and len(text) > len(a):
+            return text[len(a):].strip()
+    return text
+
+
+def antwort_varianten(ziel):
+    """Alle Schreibweisen, die als Treffer gelten: der ganze Eintrag ohne
+    Klammerzusätze, jede durch Komma/Strichpunkt/Schrägstrich getrennte
+    Alternative, angehängte Endungen wie in "adroit,e" (adroit, adroite)
+    und alles jeweils auch ohne Artikel."""
+    ganz = _glatt(re.sub(r"\([^)]*\)", " ", ziel))
+    ganz = re.sub(r"\s+(m|f|m,f|f,m|m/f|pl)$", "", ganz)   # Genusangaben
+    varianten = {ganz}
+    teile = [t.strip() for t in re.split(r"[,;/]| oder ", ganz) if t.strip()]
+    vorher = None
+    for teil in teile:
+        if teil in ("m", "f", "pl", "sg"):
+            continue
+        endung = (len(teil) <= 3 and teil.isalpha()) or teil in ENDUNGEN
+        if vorher and endung and " " not in vorher:
+            varianten.add(vorher + teil)          # adroit + e -> adroite
+        else:
+            varianten.add(teil)
+            vorher = teil
+    for v in list(varianten):
+        varianten.add(_ohne_artikel(v))
+    return {v for v in varianten if v}
+
+
+def antwort_pruefen(eingabe, ziel):
+    """'richtig', 'fast' (nur Akzente oder ein Tippfehler) oder 'falsch'."""
+    tipp = _glatt(eingabe)
+    if not tipp:
+        return "falsch"
+    tipps = {tipp, _ohne_artikel(tipp)}
+    varianten = antwort_varianten(ziel)
+    if tipps & varianten:
+        return "richtig"
+    for v in varianten:
+        for t in tipps:
+            if _ohne_akzente(t) == _ohne_akzente(v):
+                return "fast"
+            if len(v) >= 4 and difflib.SequenceMatcher(
+                    None, _ohne_akzente(t), _ohne_akzente(v)).ratio() >= 0.85:
+                return "fast"
+    return "falsch"
 
 
 def _json_datei(name, standard):
@@ -1155,6 +1231,8 @@ class MenuFenster(Panel):
         for wert in ("fr", "de"):
             self.regionen["sprache-%s" % wert] = lambda w=wert: (sprache(w),
                                                                  self._bauen())
+        schalter(g3, "schreib", "Schreibmodus (Übersetzung tippen)",
+                 a.einst["schreibmodus"], a.schreib_umschalten)
         schalter(g3, "raustabben", "Beim Raustabben schliessen",
                  a.einst["bei_inaktiv_schliessen"],
                  lambda: a.einstellung_kippen("raustabben",
@@ -1175,6 +1253,7 @@ class MenuFenster(Panel):
                 (["←", "→"], "zurück · weiter", None),
                 (["D"], "Dark Mode", None),
                 (["M"], "Menü", None),
+                (["S"], "Schreibmodus", None),
                 (["F1"], "Hilfe", None)):
             links = QWidget()
             links.setStyleSheet("background: transparent;")
@@ -1363,6 +1442,7 @@ class HinweisFenster(Panel):
         tastenzeile(["←", "→"], "blättern zurück und weiter")
         tastenzeile(["M"], "Menü (Einstellungen, Sets, Wörterliste)")
         tastenzeile(["D"], "Dark Mode")
+        tastenzeile(["S"], "Schreibmodus: Übersetzung tippen, Enter prüft")
         tastenzeile(["F1"], "diese Hilfe")
         if app.einst["taste_quit"]:
             tastenzeile([app.einst["taste_quit"]], "Programm schliessen")
@@ -1792,6 +1872,44 @@ class Karte(QWidget):
         self._hovertakt = QTimer(self)
         self._hovertakt.timeout.connect(self._hover_schritt)
 
+        # Eingabefeld für den Schreibmodus - sitzt unten zwischen den
+        # Pfeilknöpfen, sichtbar nur wenn der Modus an ist.
+        self.feld = QLineEdit(self)
+        self.feld.setPlaceholderText("Übersetzung tippen …")
+        self.feld.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.feld.setFont(basisfont(15))
+        self.feld.setFrame(False)
+        self.feld.returnPressed.connect(lambda: self.app.antworten(self.feld.text()))
+        self.feld.hide()
+        self._feld_stil()
+        self._feld_platzieren()
+
+    def _feld_stil(self, status=None):
+        t = THEMEN[self.app.thema]
+        farbe = ANTWORT_FARBE[status] if status else t["fg"]
+        self.feld.setStyleSheet(
+            "QLineEdit { color: %s; background: %s; border: 1px solid %s;"
+            " border-radius: 17px; padding: 0 12px; selection-background-color: %s; }"
+            "QLineEdit:focus { border: 1px solid %s; }"
+            % (hexc(farbe), hexc(t["gruppe"]), hexc(t["rand"]),
+               hexc(t["akzent"]), hexc(t["akzent"])))
+
+    def _feld_platzieren(self):
+        r = self.karte_rect()
+        breite = max(120, int(r.width() - 120))
+        self.feld.setGeometry(int(r.center().x() - breite / 2),
+                              int(r.bottom() - 30 - 17), breite, 34)
+
+    def _feld_zeigen(self, an):
+        """Feld nur im Ruhezustand zeigen - beim Flip dreht die Karte, das
+        Kind-Widget aber nicht, darum blendet es kurz aus."""
+        sichtbar = an and self.scale > 0.999 and abs(self.winkel) < 1 \
+            and self.start_anim >= 1.0
+        if sichtbar != self.feld.isVisible():
+            self.feld.setVisible(sichtbar)
+            if sichtbar and not self.feld.isReadOnly():
+                self.feld.setFocus()
+
     # ---- Geometrie
     def karte_rect(self):
         return QRectF(SCHATTEN, SCHATTEN, self.width() - 2 * SCHATTEN,
@@ -1913,7 +2031,9 @@ class Karte(QWidget):
         zeilen, groesse = self.wrapped(a.word[a.side])
         p.setFont(basisfont(max(1, groesse)))
         p.setPen(qfarbe(t["fg"]))
-        textfeld = rect.adjusted(20, 20, -20, -20)
+        schreib = a.einst["schreibmodus"]
+        textfeld = rect.adjusted(20, 20, -20, -70 if schreib else -20)
+        self._feld_zeigen(schreib)
         p.setOpacity(p.opacity() * self.wort_alpha)
         if self.versatz:
             # Der Text zieht durch die Karte; ausserhalb wird abgeschnitten,
@@ -1955,6 +2075,14 @@ class Karte(QWidget):
                 p.drawText(QRectF(x - r, by - r, 2 * r, 2 * r),
                            Qt.AlignmentFlag.AlignCenter, a.start_side.upper())
 
+        if ruhe and a.einst["schreibmodus"] and any(a.schreib_stand):
+            r_, f_, x_ = a.schreib_stand
+            p.setFont(basisfont(11))
+            p.setPen(qfarbe(t["zweit"]))
+            p.drawText(QRectF(rect.x() + 60, rect.y() + 12, rect.width() - 120, 18),
+                       Qt.AlignmentFlag.AlignCenter,
+                       "%d ✓  ·  %d ~  ·  %d ✗" % (r_, f_, x_))
+
         if ruhe and a.countdown_frac:
             bw = (rect.width() - 120) * a.countdown_frac
             if bw > 5:
@@ -1992,7 +2120,8 @@ class Karte(QWidget):
 
     def wortgroesse(self, text):
         r = self.karte_rect()
-        basis = min(r.width() / 19.0, r.height() / 11.5)
+        hoehe = r.height() - (50 if self.app.einst["schreibmodus"] else 0)
+        basis = min(r.width() / 19.0, hoehe / 11.5)
         n = len(text)
         if n > 70:
             basis *= 0.60
@@ -2232,7 +2361,13 @@ class Karte(QWidget):
         elif knopf == "lang":
             a.toggle_start()
         elif self.karte_rect().contains(e.position()):
-            a.flip()
+            if a.einst["schreibmodus"]:
+                if a.antwort_status:
+                    a.schreib_weiter()
+                else:
+                    self.feld.setFocus()
+            else:
+                a.flip()
 
     def _kontextmenue(self, punkt):
         """Rechtsklick auf die Karte: direkt ins Menü springen."""
@@ -2258,6 +2393,7 @@ class Karte(QWidget):
 
     def resizeEvent(self, _):
         self._wrapcache.clear()
+        self._feld_platzieren()
 
 
 # ---------------------------------------------------------------- Anwendung
@@ -2277,6 +2413,12 @@ class Tastenfilter(QObject):
             if ereignis.key() == Qt.Key.Key_Escape \
                     and not self.app.warte_auf_taste:
                 return False                  # schliesst das jeweilige Fenster
+            if self.app.tippt(ziel):
+                # Buchstaben, Pfeile, Enter gehören dem Eingabefeld; nur
+                # F1 und Esc (Feld leeren) bleiben Kürzel.
+                if ereignis.key() == Qt.Key.Key_F1:
+                    return self.app.taste(ereignis.key())
+                return False
             if self.app.taste(ereignis.key()):
                 return True
         return False
@@ -2310,6 +2452,8 @@ class Voci:
         self.liste = None
         self.hinweis = None
         self.warte_auf_taste = None      # "c"/"v"/"b"/"quit" bei Neubelegung
+        self.antwort_status = None       # Schreibmodus: None/richtig/fast/falsch
+        self.schreib_stand = [0, 0, 0]   # richtig / fast / falsch in dieser Sitzung
         self.liste_sortierung = "wertung"
 
         self.karte = Karte(self)
@@ -2375,8 +2519,13 @@ class Voci:
             self.update_starten()
         elif key == Qt.Key.Key_M:
             self.menu_umschalten()
+        elif key == Qt.Key.Key_S:
+            self.schreib_umschalten()
         elif key == Qt.Key.Key_F1:
             self.hinweis_umschalten()
+        elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter) \
+                and self.einst["schreibmodus"] and self.antwort_status:
+            self.schreib_weiter()
         elif key == Qt.Key.Key_Left:
             self.go_back()
         elif key == Qt.Key.Key_Right:
@@ -2520,6 +2669,7 @@ class Voci:
             self.idx = neu
             self.flips = 0
             self.side = self.start_side
+            self._antwort_zuruecksetzen()
         self.karte.uebergang(commit, +1)
 
     def go_back(self):
@@ -2533,6 +2683,7 @@ class Voci:
         def commit():
             self.idx = eintrag["idx"]
             self.flips = 0
+            self._antwort_zuruecksetzen()
         self.karte.uebergang(commit, -1)
 
     def flip(self):
@@ -2562,6 +2713,81 @@ class Voci:
         self.blitz = None
         self.next_word()
 
+    # ---- Schreibmodus
+    def tippt(self, ziel=None):
+        """Gerade am Tippen: Feld sichtbar, noch nicht geantwortet, und die
+        Taste geht ans Feld (Fokus oder direktes Ziel des Ereignisses)."""
+        feld = self.karte.feld
+        return (self.einst["schreibmodus"] and self.antwort_status is None
+                and feld.isVisible()
+                and (ziel is feld or feld.hasFocus()
+                     or QApplication.focusWidget() is feld))
+
+    def schreib_umschalten(self):
+        if self.animating or self.blitz:
+            return
+        self.einst["schreibmodus"] = not self.einst["schreibmodus"]
+        speichere_einstellungen(self.einst)
+        self._antwort_zuruecksetzen()
+        self.karte._wrapcache.clear()
+        if self.einst["schreibmodus"] and self.side != self.start_side:
+            def commit():
+                self.side = self.start_side
+                self.flips = 0
+            self.karte.aufdecken(commit)
+        self.karte.update()
+        if self.menu and self.menu.isVisible():
+            self.menu._bauen()
+
+    def _antwort_zuruecksetzen(self):
+        self.antwort_status = None
+        feld = self.karte.feld
+        feld.setReadOnly(False)
+        feld.clear()
+        self.karte._feld_stil(None)
+        if self.einst["schreibmodus"] and feld.isVisible():
+            feld.setFocus()
+
+    def antworten(self, text):
+        """Enter im Eingabefeld: prüfen, werten, aufleuchten - und je nach
+        Ergebnis weitergehen oder die Lösung aufdecken."""
+        if (not self.einst["schreibmodus"] or self.antwort_status
+                or self.animating or self.blitz):
+            return
+        self.cancel_auto()
+        ziel = self.word["de" if self.side == "fr" else "fr"]
+        ergebnis = antwort_pruefen(text, ziel)
+        self.antwort_status = ergebnis
+        self.schreib_stand[("richtig", "fast", "falsch").index(ergebnis)] += 1
+        taste = ANTWORT_WERTUNG[ergebnis]
+        delta = WERTUNG_DELTA[taste]
+        alter_anteil = self.undo_delta or 0.0
+        self.setze_faktor(self.idx, self.faktor(self.idx) - alter_anteil + delta)
+        self.undo_delta = delta
+        feld = self.karte.feld
+        feld.setReadOnly(True)
+        if not text.strip():
+            feld.setText("— weiss ich nicht —")
+        self.karte._feld_stil(ergebnis)
+        self.blitz = WERTUNG_BLITZ[taste]
+        self.karte.pulse(self._antwort_ende)
+
+    def _antwort_ende(self):
+        self.blitz = None
+        if self.antwort_status == "richtig":
+            self.next_word()
+            return
+
+        def commit():                      # Lösung zeigen, dann warten
+            self.side = "de" if self.side == "fr" else "fr"
+            self.flips += 1
+        self.karte.aufdecken(commit)
+
+    def schreib_weiter(self):
+        """Nach dem Aufdecken: Enter/Klick geht zum nächsten Wort."""
+        if self.antwort_status:
+            self.next_word()
+
     def toggle_start(self):
         if self.animating:
             return
@@ -2580,6 +2806,7 @@ class Voci:
         self.thema = "dunkel" if self.thema == "hell" else "hell"
         self.einst["thema"] = self.thema
         speichere_einstellungen(self.einst)
+        self.karte._feld_stil(self.antwort_status)
         self.karte.update()
         self.menu_neu_aufbauen()
 

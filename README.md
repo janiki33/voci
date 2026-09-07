@@ -194,6 +194,37 @@ dauerhaft im Benutzerordner gespeichert.
 Die **Wertung** in der Wörterliste rechnet den Faktor um: 1 (und alles darüber)
 = 0 %, 0.5 = 50 %, 0 = 100 % — mit Farbpunkt von Rot über Gelb nach Grün.
 
+## Schreibmodus (Taste s)
+
+Statt die Karte aufzudecken, **tippt man die Übersetzung selbst**. Der
+Schalter *Schreibmodus* in den Einstellungen oder die Taste **s** blendet
+unten auf der Karte ein Eingabefeld ein; oben steht das Wort in der
+Startsprache (FR/DE-Knopf wie gehabt). **Enter** prüft:
+
+| Ergebnis | Was passiert |
+|---|---|
+| **richtig** | grüner Blitz, Wertung wie **b** („kann ich“, Faktor −0.2), automatisch das nächste Wort |
+| **fast richtig** — nur ein Akzent oder ein Tippfehler daneben | gelber Blitz, Wertung wie **v** (neutral), die Karte deckt die richtige Lösung auf |
+| **falsch** oder leeres Feld (= „weiss ich nicht“) | roter Blitz, Wertung wie **c** („kann ich nicht“, Faktor +0.1), die Karte deckt die Lösung auf |
+
+Nach dem Aufdecken bleibt die eigene Eingabe farbig im Feld stehen, damit
+man den Unterschied sieht; **Enter**, ein Klick auf die Karte oder **→**
+gehen weiter. Wer die automatische Wertung überstimmen will, drückt nach dem
+Aufdecken **c / v / b**. Oben mittig zählt die Sitzung mit (✓ · ~ · ✗).
+
+Die Prüfung ist bewusst tolerant, weil die Einträge Wörterbuch-Notation
+haben: Gross-/Kleinschreibung und Leerzeichen sind egal, Klammerzusätze wie
+„(adj.)“ und Genusangaben wie „m,f“ werden ignoriert, bei mehreren
+Bedeutungen („lieben, mögen, gerne tun“) reicht eine, Formen wie „adroit,e“
+gelten als *adroit* oder *adroite*, und Artikel (le/la/un/une/der/die/das …)
+darf man weglassen. Gleiche Buchstaben ohne Akzente oder ein einzelner
+Tippfehler zählen als *fast richtig*.
+
+Solange man tippt, gehen alle Buchstaben ins Feld — die Kürzel c/v/b/d/m
+sind dann ausser Kraft, nur **F1** und **Esc** (Feld leeren) bleiben. Der
+Schreibmodus nutzt denselben Lern-Algorithmus: Wörter, die man nicht
+schreiben kann, kommen automatisch öfter.
+
 ## Menü (Taste m)
 
 - **Einstellungen** (scrollbar): Dark Mode, immer im Vordergrund,
