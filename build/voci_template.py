@@ -1213,7 +1213,9 @@ class Gruppe(QFrame):
 # ---------------------------------------------------------------- Menü
 class MenuFenster(Panel):
     def __init__(self, app, tab="einstellungen"):
-        super().__init__(app, "Voci", 320, 620)
+        # 360 statt 320: mit breiteren Systemschriften (Windows) haben auch
+        # die längsten Zeilen wie "Programm schliessen" noch Platz
+        super().__init__(app, "Voci", 360, 620)
         self.tab = tab
         self.regionen = {}           # Name -> Wirkung (auch für Tests)
         self._bauen()
@@ -1350,6 +1352,7 @@ class MenuFenster(Panel):
                             % hexc(t["zweit"]))
         lay.addWidget(titel)
         g4 = Gruppe(a)
+        kachelkaesten = []
         for kacheln, text, wofuer in (
                 ([a.einst["taste_c"]], "kann ich nicht", "c"),
                 ([a.einst["taste_v"]], "neutral", "v"),
@@ -1360,25 +1363,42 @@ class MenuFenster(Panel):
                 (["M"], "Menü", None),
                 (["S"], "Schreibmodus", None),
                 (["F1"], "Hilfe", None)):
+            # Die Kacheln sitzen in einem eigenen Kasten; alle Kästen bekommen
+            # nachher dieselbe Breite, damit Pfeil und Text jeder Zeile
+            # bündig untereinander stehen - auch bei zwei Kacheln (← →).
+            kasten = QWidget()
+            kasten.setStyleSheet("background: transparent;")
+            hk = QHBoxLayout(kasten)
+            hk.setContentsMargins(0, 0, 0, 0)
+            hk.setSpacing(4)
+            for k in kacheln:
+                hk.addWidget(TastenKachel(a, k, wofuer))
+            hk.addStretch(1)
+            kachelkaesten.append(kasten)
+
             links = QWidget()
             links.setStyleSheet("background: transparent;")
             h = QHBoxLayout(links)
             h.setContentsMargins(0, 0, 0, 0)
-            h.setSpacing(4)
-            for k in kacheln:
-                h.addWidget(TastenKachel(a, k, wofuer))
+            h.setSpacing(0)
+            h.addWidget(kasten)
             pfeil = QLabel("→")
             pfeil.setFont(basisfont(11))
             pfeil.setStyleSheet("color: %s; background: transparent;"
                                 % hexc(t["zweit"]))
-            h.addSpacing(4)
+            h.addSpacing(8)
             h.addWidget(pfeil)
+            h.addSpacing(8)
             lab = QLabel(text)
             lab.setFont(basisfont(12))
+            lab.setMinimumWidth(1)
             lab.setStyleSheet("color: %s; background: transparent;"
                               % hexc(t["fg"]))
-            h.addWidget(lab)
+            h.addWidget(lab, 1)
             g4.zeile(links, [])
+        kachelbreite = max(k.sizeHint().width() for k in kachelkaesten)
+        for k in kachelkaesten:
+            k.setFixedWidth(kachelbreite)
         lay.addWidget(g4)
 
         version = QLabel("Voci %s" % VERSION)
