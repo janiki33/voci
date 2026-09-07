@@ -210,7 +210,7 @@ Startsprache (FR/DE-Knopf wie gehabt). **Enter** prüft:
 Nach dem Aufdecken bleibt die eigene Eingabe farbig im Feld stehen, damit
 man den Unterschied sieht; **Enter**, ein Klick auf die Karte oder **→**
 gehen weiter. Wer die automatische Wertung überstimmen will, drückt nach dem
-Aufdecken **c / v / b**. Oben mittig zählt die Sitzung mit (✓ · ~ · ✗).
+Aufdecken **c / v / b**.
 
 Die Prüfung ist bewusst tolerant, weil die Einträge Wörterbuch-Notation
 haben: Gross-/Kleinschreibung und Leerzeichen sind egal, Klammerzusätze wie

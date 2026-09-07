@@ -2081,14 +2081,6 @@ class Karte(QWidget):
                 p.drawText(QRectF(x - r, by - r, 2 * r, 2 * r),
                            Qt.AlignmentFlag.AlignCenter, a.start_side.upper())
 
-        if ruhe and a.einst["schreibmodus"] and any(a.schreib_stand):
-            r_, f_, x_ = a.schreib_stand
-            p.setFont(basisfont(11))
-            p.setPen(qfarbe(t["zweit"]))
-            p.drawText(QRectF(rect.x() + 60, rect.y() + 12, rect.width() - 120, 18),
-                       Qt.AlignmentFlag.AlignCenter,
-                       "%d ✓  ·  %d ~  ·  %d ✗" % (r_, f_, x_))
-
         if ruhe and a.countdown_frac:
             bw = (rect.width() - 120) * a.countdown_frac
             if bw > 5:
