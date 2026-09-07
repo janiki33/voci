@@ -45,7 +45,7 @@ try:
                                 QEasingCurve, QSize, QEvent, QObject)
     from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication,
                                QIcon, QPainter, QPainterPath, QPen, QPixmap, QCursor,
-                               QTransform, QLinearGradient, QBrush, QRegion)
+                               QTransform, QLinearGradient, QBrush)
     from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame,
                                    QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
                                    QScrollArea, QVBoxLayout, QWidget)
@@ -102,8 +102,7 @@ THEMEN = {
         "gruen": (52, 199, 89),     # Schalter an
         "grau": (209, 209, 214),    # Schalter aus
         "schatten": (0, 0, 0, 46),
-        "glas": (255, 255, 255, 150),        # Milchglas ohne System-Unschärfe
-        "glas_duenn": (255, 255, 255, 70),   # Tönung, wenn das System selbst blurt
+        "glas": (255, 255, 255, 150),        # durchscheinende Fläche
         "glas_kante": (255, 255, 255, 240),  # Lichtkante oben links
         "glas_kante_schwach": (255, 255, 255, 120),
         "glas_gruppe": (255, 255, 255, 110),
@@ -121,7 +120,6 @@ THEMEN = {
         "grau": (57, 57, 61),
         "schatten": (0, 0, 0, 110),
         "glas": (14, 16, 28, 150),
-        "glas_duenn": (255, 255, 255, 12),
         "glas_kante": (255, 255, 255, 180),
         "glas_kante_schwach": (255, 255, 255, 90),
         "glas_gruppe": (255, 255, 255, 22),
@@ -780,12 +778,12 @@ def schatten_ring(p, rect, t, tief=False):
                           RADIUS + i, RADIUS + i)
 
 
-def glas_flaeche(p, rect, t, radius, tint=None, duenn=False):
+def glas_flaeche(p, rect, t, radius, tint=None):
     """Glas-Material in drei Schichten wie im Liquid-Glass-CSS:
     fast durchsichtige Tönung (Frost), ein weicher Lichtsaum nach innen
     (inset 0 0 24px) und die helle Kante, die oben links am stärksten
     leuchtet (Lichtquelle) und unten rechts nur noch schwach."""
-    grund = list(t["glas_duenn"] if duenn else t["glas"])
+    grund = list(t["glas"])
     if tint:
         grund[:3] = tint
     pfad = QPainterPath()
@@ -826,76 +824,15 @@ def glas_rahmen_css(t):
             % (schwach, hell, hell))
 
 
-def system_glas(fenster, an, thema):
-    """Echte Unschärfe hinter dem Fenster - gibt es nur über das System.
-    Windows: DWM-Acrylic per SetWindowCompositionAttribute. Liefert True,
-    wenn sie aktiv ist; sonst bleibt der Milchglas-Rückfall."""
-    if not IS_WIN:
-        return False
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        class Accent(ctypes.Structure):
-            _fields_ = [("AccentState", wintypes.DWORD),
-                        ("AccentFlags", wintypes.DWORD),
-                        ("GradientColor", wintypes.DWORD),
-                        ("AnimationId", wintypes.DWORD)]
-
-        class Daten(ctypes.Structure):
-            _fields_ = [("Attribute", wintypes.DWORD),
-                        ("Data", ctypes.POINTER(Accent)),
-                        ("SizeOfData", wintypes.ULONG)]
-
-        accent = Accent()
-        accent.AccentState = 4 if an else 0   # ACRYLICBLURBEHIND / DISABLED
-        accent.AccentFlags = 0
-        # Tönung als 0xAABBGGRR
-        accent.GradientColor = 0x50201812 if thema == "dunkel" else 0x70F6F4F4
-        daten = Daten()
-        daten.Attribute = 19                   # WCA_ACCENT_POLICY
-        daten.Data = ctypes.pointer(accent)
-        daten.SizeOfData = ctypes.sizeof(accent)
-        fn = ctypes.windll.user32.SetWindowCompositionAttribute
-        fn.argtypes = [wintypes.HWND, ctypes.POINTER(Daten)]
-        fn.restype = wintypes.BOOL
-        return bool(fn(wintypes.HWND(int(fenster.winId())),
-                       ctypes.byref(daten))) and an
-    except Exception:
-        return False
-
-
-def glas_maske(fenster, an):
-    """Mit System-Unschärfe wird das Fenster auf die runde Karte beschnitten,
-    sonst würde der Blur auch den Schattenrand füllen."""
-    if an:
-        r = QRectF(SCHATTEN, SCHATTEN, fenster.width() - 2 * SCHATTEN,
-                   fenster.height() - 2 * SCHATTEN)
-        pfad = QPainterPath()
-        pfad.addRoundedRect(r, RADIUS, RADIUS)
-        fenster.setMask(QRegion(pfad.toFillPolygon().toPolygon()))
-    else:
-        fenster.clearMask()
-
-
-def glas_anwenden(fenster):
-    """Systemunschärfe und Maske für ein Fenster nach dem aktuellen
-    Zustand setzen; merkt sich, ob das System mitspielt."""
-    an = fenster.app.einst["glas"]
-    fenster.system_glas = system_glas(fenster, an, fenster.app.thema)
-    glas_maske(fenster, an and fenster.system_glas)
-
-
-def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True, glas=False,
-                   system=False):
+def panel_zeichnen(p, breite, hoehe, thema, mit_schatten=True, glas=False):
     """Weicher Schatten, Kartenfläche, Haarlinie – gemeinsame Basis aller
     Fenster. Liefert das innere Karten-Rechteck."""
     t = THEMEN[thema]
     rect = QRectF(SCHATTEN, SCHATTEN, breite - 2 * SCHATTEN, hoehe - 2 * SCHATTEN)
-    if mit_schatten and not system:
+    if mit_schatten:
         schatten_ring(p, rect, t, tief=glas)
     if glas:
-        glas_flaeche(p, rect, t, RADIUS, duenn=system)
+        glas_flaeche(p, rect, t, RADIUS)
         return rect
     p.setBrush(qfarbe(t["bg"]))
     p.setPen(QPen(qfarbe(t["rand"]), 1))
@@ -918,8 +855,6 @@ class Panel(QWidget):
         self.resize(breite + 2 * SCHATTEN, hoehe + 2 * SCHATTEN)
         self._zieh = None
         self._x_heiss = False
-        self.system_glas = False
-        glas_anwenden(self)
         self.setMouseTracking(True)
 
         self.inhalt = QWidget(self)
@@ -933,8 +868,7 @@ class Panel(QWidget):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         t = THEMEN[self.app.thema]
         rect = panel_zeichnen(p, self.width(), self.height(), self.app.thema,
-                              self.app.einst["schatten"], self.app.einst["glas"],
-                              getattr(self, "system_glas", False))
+                              self.app.einst["schatten"], self.app.einst["glas"])
         p.setPen(qfarbe(t["fg"]))
         p.setFont(basisfont(15, fett=True))
         p.drawText(QRectF(rect.x() + 16, rect.y() + 8, rect.width() - 60, 28),
@@ -960,8 +894,6 @@ class Panel(QWidget):
         self.inhalt.setGeometry(SCHATTEN + 16, SCHATTEN + 40,
                                 self.width() - 2 * SCHATTEN - 32,
                                 self.height() - 2 * SCHATTEN - 52)
-        if getattr(self, "system_glas", False):
-            glas_maske(self, True)
 
     # -- Maus: X, sonst ziehen
     def mousePressEvent(self, e):
@@ -2044,7 +1976,8 @@ class Karte(QWidget):
         self.move(140, 140)
 
         self.scale = 1.0            # Restbreite beim Flip (1 = voll)
-        self.winkel = 0.0           # Drehung um die Hochachse, echter 3D-Flip
+        self.winkel = 0.0           # Drehung beim Flip (Grad)
+        self.achse = "y"            # "y" = seitlich (Wortwechsel), "x" = kippen
         self.versatz = 0.0          # seitliches Gleiten beim Wortwechsel
         self.inhalt = 1.0           # Deckkraft der ganzen Karte (Flip)
         self.wort_alpha = 1.0       # Deckkraft nur des Worts (Gleiten)
@@ -2079,8 +2012,6 @@ class Karte(QWidget):
         self.anim_schreib = None
         self._feld_stil()
         self._feld_platzieren()
-        self.system_glas = False
-        glas_anwenden(self)
 
     def schreib_animieren(self, an):
         start, ziel = self.schreib_anteil, (1.0 if an else 0.0)
@@ -2208,19 +2139,21 @@ class Karte(QWidget):
             p.scale(s1, s1)
             p.translate(-cx, -cy)
 
-        # Echter Flip: Drehung um die Hochachse mit Perspektive. Die
+        # Echter Flip mit Perspektive: beim Wortwechsel um die Hochachse
+        # (seitlich), beim Aufdecken um die Querachse (kippen). Die
         # Projektion vergrössert die zugewandte Kante (Fluchtpunkt bei
-        # 1024 px); ohne Gegen-Skalierung ragt die Karte oben und unten
-        # über das Fenster hinaus und wird abgeschnitten.
+        # 1024 px); ohne Gegen-Skalierung ragt die Karte über das Fenster
+        # hinaus und wird abgeschnitten.
         if self.winkel:
             tiefe = 1024.0
-            ausladung = voll.width() / 2 * abs(math.sin(
-                math.radians(self.winkel)))
+            halbe_kante = (voll.height() if self.achse == "x" else voll.width()) / 2
+            ausladung = halbe_kante * abs(math.sin(math.radians(self.winkel)))
             s2 = (tiefe - ausladung) / tiefe
             dreh = QTransform()
             dreh.translate(cx, cy)
             dreh.scale(s2, s2)
-            dreh.rotate(self.winkel, Qt.Axis.YAxis)
+            dreh.rotate(self.winkel, Qt.Axis.XAxis if self.achse == "x"
+                        else Qt.Axis.YAxis)
             dreh.translate(-cx, -cy)
             p.setTransform(dreh, True)
 
@@ -2229,12 +2162,12 @@ class Karte(QWidget):
 
         # Der Schatten liegt in den transformierten Koordinaten und dreht
         # deshalb beim Flip mit; abschaltbar im Menü.
-        if a.einst["schatten"] and not self.system_glas:
+        if a.einst["schatten"]:
             schatten_ring(p, rect, t, tief=a.einst["glas"])
         if a.einst["glas"]:
             tint = (blend(t["glas"][:3], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
                     if a.blitz else None)
-            glas_flaeche(p, rect, t, RADIUS, tint, duenn=self.system_glas)
+            glas_flaeche(p, rect, t, RADIUS, tint)
         else:
             flaeche = (blend(t["bg"], a.blitz, self.blitz_staerke * BLITZ_ANTEIL)
                        if a.blitz else t["bg"])
@@ -2344,6 +2277,7 @@ class Karte(QWidget):
     def _ohne_animation(self, commit):
         commit()
         self.scale, self.winkel, self.versatz = 1.0, 0.0, 0.0
+        self.achse = "y"
         self.inhalt, self.wort_alpha, self.puls = 1.0, 1.0, 0.0
         self.app.animating = False
         self.update()
@@ -2352,16 +2286,16 @@ class Karte(QWidget):
         """Wortwechsel (weiter/zurück): Karte dreht sich; ist die
         Flip-Animation abgeschaltet, gleitet stattdessen nur das Wort."""
         if self.app.einst["flip_animation"]:
-            self.drehe(commit, richtung)
+            self.drehe(commit, richtung, "y")
         else:
             self.gleite(commit, richtung)
 
     def aufdecken(self, commit):
-        """FR/DE aufdecken: Karte dreht sich; ist die Flip-Animation
-        abgeschaltet, blendet das Wort nur um - beim Aufdecken bleibt es
-        an Ort, seitliches Gleiten gehört zum Wortwechsel."""
+        """FR/DE aufdecken: Karte kippt um die Querachse - so unterscheidet
+        sich das Aufdecken sichtbar vom seitlichen Wortwechsel. Ist die
+        Flip-Animation abgeschaltet, blendet das Wort nur um."""
         if self.app.einst["flip_animation"]:
-            self.drehe(commit, +1)
+            self.drehe(commit, +1, "x")
         else:
             self.fade(commit)
 
@@ -2387,15 +2321,16 @@ class Karte(QWidget):
         self.anim = Ablauf(self, 260, schritt, mitte=commit, fertig=fertig)
         self.anim.start()
 
-    def drehe(self, commit, richtung=+1):
-        """Echter Flip: Die Karte dreht sich um die Hochachse, auf halbem Weg
-        wechselt der Inhalt - vor und zurück in entgegengesetzter Richtung.
-        Die zweite Hälfte läuft von -90 zurück, sonst stünde die Schrift
-        spiegelverkehrt."""
+    def drehe(self, commit, richtung=+1, achse="y"):
+        """Echter Flip: Die Karte dreht sich um die Hoch- oder die Querachse,
+        auf halbem Weg wechselt der Inhalt - vor und zurück in
+        entgegengesetzter Richtung. Die zweite Hälfte läuft von -90 zurück,
+        sonst stünde die Schrift spiegelverkehrt."""
         a = self.app
         if a.animating:
             return
         a.animating = True
+        self.achse = achse
 
         def schritt(w):
             t = kurve(w)
@@ -2409,6 +2344,7 @@ class Karte(QWidget):
 
         def fertig():
             self.winkel, self.inhalt = 0.0, 1.0
+            self.achse = "y"
             a.animating = False
             self.update()
 
@@ -2604,8 +2540,6 @@ class Karte(QWidget):
     def resizeEvent(self, _):
         self._wrapcache.clear()
         self._feld_platzieren()
-        if self.system_glas:
-            glas_maske(self, True)
 
 
 # ---------------------------------------------------------------- Anwendung
@@ -3056,7 +2990,6 @@ class Voci:
         self.karte._feld_stil(self.antwort_status)
         for fenster in (self.karte, self.hinweis):
             if fenster:
-                glas_anwenden(fenster)
                 fenster.update()
 
     def toggle_thema(self):

@@ -134,9 +134,12 @@ verlassen hat. Maximal 10 Wörter; ohne Historie ist der Knopf ausgeblendet.
 
 Jede Aktion hat ihre eigene Bewegung:
 
-- **Flip:** Die Karte dreht sich perspektivisch um die Hochachse; auf halbem
-  Weg wechselt das Wort. Die zweite Hälfte dreht von −90° zurück, sonst stünde
-  die Schrift spiegelverkehrt.
+- **Aufdecken (FR ↔ DE):** Die Karte kippt perspektivisch um die Querachse,
+  also nach hinten weg; auf halbem Weg wechselt das Wort. Die zweite Hälfte
+  dreht von −90° zurück, sonst stünde die Schrift spiegelverkehrt.
+- **Flip beim Wortwechsel:** Dieselbe Drehung, aber um die Hochachse
+  (seitlich) — so sieht man sofort, ob gerade aufgedeckt oder geblättert
+  wird.
 - **Wortwechsel:** Das alte Wort zieht zur Seite ab und das neue kommt von der
   anderen Seite herein — Richtung passend zu vor oder zurück. Der Rahmen mit
   den Knöpfen bleibt dabei ruhig stehen, der Text wird am Kartenrand
