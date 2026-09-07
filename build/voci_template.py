@@ -1438,7 +1438,11 @@ class HinweisFenster(Panel):
             h.addStretch(1)
             lay.addWidget(z)
 
-        absatz("Klick auf die Karte deckt die Übersetzung auf.")
+        if app.einst["schreibmodus"]:
+            absatz("Tippe die Übersetzung ins Feld, Enter prüft sie. "
+                   "Tab springt ins Feld und wieder heraus.")
+        else:
+            absatz("Klick auf die Karte deckt die Übersetzung auf.")
         lay.addSpacing(4)
         absatz("Bewerte jedes Wort mit einer Taste:")
         tastenzeile([app.einst["taste_c"]], "kann ich nicht (kommt öfter)")
@@ -1448,14 +1452,18 @@ class HinweisFenster(Panel):
         tastenzeile(["←", "→"], "blättern zurück und weiter")
         tastenzeile(["M"], "Menü (Einstellungen, Sets, Wörterliste)")
         tastenzeile(["D"], "Dark Mode")
-        tastenzeile(["S"], "Schreibmodus: Übersetzung tippen, Enter prüft")
+        tastenzeile(["S"], "Schreibmodus an/aus")
         tastenzeile(["F1"], "diese Hilfe")
         if app.einst["taste_quit"]:
             tastenzeile([app.einst["taste_quit"]], "Programm schliessen")
         lay.addSpacing(4)
-        absatz("Das Fenster bleibt immer im Vordergrund - "
-               "einfach neben die Arbeit legen.")
-        lay.addStretch(1)
+        if app.einst["immer_vorne"]:
+            absatz("Das Fenster bleibt immer im Vordergrund - "
+                   "einfach neben die Arbeit legen.")
+        else:
+            absatz("Im Menü lässt sich das Fenster immer im Vordergrund "
+                   "halten - dann liegt es einfach neben der Arbeit.")
+        lay.addSpacing(8)
 
         los = QPushButton("Los geht's")
         los.setFont(basisfont(13, fett=True))
@@ -1467,6 +1475,13 @@ class HinweisFenster(Panel):
             % (hexc(t["akzent"]), hexc(blend(t["akzent"], (0, 0, 0), 0.15))))
         los.clicked.connect(self.close)
         lay.addWidget(los)
+
+        # Höhe aus dem Inhalt: Zeilenzahl und Schriftgrösse sind je nach
+        # Belegung und System verschieden, eine feste Höhe schneidet ab.
+        breite = self.inhalt.width()
+        hoehe = (lay.heightForWidth(breite) if lay.hasHeightForWidth()
+                 else lay.sizeHint().height())
+        self.resize(340 + 2 * SCHATTEN, max(400, hoehe + 52 + 12) + 2 * SCHATTEN)
 
     def closeEvent(self, e):
         self.app.einst["hinweis_gesehen"] = True
@@ -1895,7 +1910,7 @@ class Karte(QWidget):
         farbe = ANTWORT_FARBE[status] if status else t["fg"]
         self.feld.setStyleSheet(
             "QLineEdit { color: %s; background: %s; border: 1px solid %s;"
-            " border-radius: 17px; padding: 0 12px; selection-background-color: %s; }"
+            " border-radius: 20px; padding: 0 14px; selection-background-color: %s; }"
             "QLineEdit:focus { border: 1px solid %s; }"
             % (hexc(farbe), hexc(t["gruppe"]), hexc(t["rand"]),
                hexc(t["akzent"]), hexc(t["akzent"])))
@@ -1904,7 +1919,7 @@ class Karte(QWidget):
         r = self.karte_rect()
         breite = max(120, int(r.width() - 120))
         self.feld.setGeometry(int(r.center().x() - breite / 2),
-                              int(r.bottom() - 30 - 17), breite, 34)
+                              int(r.bottom() - 30 - 20), breite, 40)
 
     def _feld_zeigen(self, an):
         """Feld nur im Ruhezustand zeigen - beim Flip dreht die Karte, das
@@ -2038,7 +2053,7 @@ class Karte(QWidget):
         p.setFont(basisfont(max(1, groesse)))
         p.setPen(qfarbe(t["fg"]))
         schreib = a.einst["schreibmodus"]
-        textfeld = rect.adjusted(20, 20, -20, -70 if schreib else -20)
+        textfeld = rect.adjusted(20, 20, -20, -76 if schreib else -20)
         self._feld_zeigen(schreib)
         p.setOpacity(p.opacity() * self.wort_alpha)
         if self.versatz:
@@ -2118,7 +2133,7 @@ class Karte(QWidget):
 
     def wortgroesse(self, text):
         r = self.karte_rect()
-        hoehe = r.height() - (50 if self.app.einst["schreibmodus"] else 0)
+        hoehe = r.height() - (56 if self.app.einst["schreibmodus"] else 0)
         basis = min(r.width() / 19.0, hoehe / 11.5)
         n = len(text)
         if n > 70:
