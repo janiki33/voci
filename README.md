@@ -1,7 +1,8 @@
 # Voci – Vokabel-Karte, immer im Vordergrund
 
 Kleines Flashcard-Fenster (wie der Taschenrechner im „Immer im Vordergrund"-Modus),
-das die Französisch-Vokabeln aus *Reprise étape 1* abfragt (243 Wortpaare).
+das die Französisch-Vokabeln aus *Reprise étape 1* abfragt (243 Wortpaare,
+dazu die Sets *Fragewörter* und *Grundwortschatz*).
 Läuft unter Windows, macOS und Linux.
 
 ### ➜ [**Hier herunterladen**](https://github.com/janiki33/voci/releases/latest)
@@ -246,10 +247,11 @@ schreiben kann, kommen automatisch öfter.
   und *Programm schliessen*). Ganz unten steht die
   installierte **Version**. Alles wird gespeichert und beim nächsten Start
   wiederhergestellt.
-- **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich; eingebaut sind
-  *Étape 1* mit 243 Wörtern und *Fragewörter* mit den zehn französischen
-  Fragewörtern où, qui, quand, que, qu'est-ce que, comment, combien,
-  pourquoi, quel, quelle). Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit
+- **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich). Eingebaut sind
+  *Étape 1* mit 243 Wörtern, *Fragewörter* mit den zehn französischen
+  Fragewörtern (où, qui, quand, que, qu'est-ce que, comment, combien,
+  pourquoi, quel, quelle) und *Grundwortschatz* mit 57 kleinen Wörtern —
+  Präpositionen, Adverbien und Bindewörter von *aussi* bis *entre*. Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit
   Faktor ≥ 1) und *Wörterliste anzeigen*. Die Liste zeigt dann genau das
   Set, dessen **⋯** angeklickt wurde (der Name steht im Fenstertitel); über
   die Tastenkombination im Menü ohne Set-Auswahl erscheinen die aktiven Sets.
