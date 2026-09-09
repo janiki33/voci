@@ -16,14 +16,11 @@ liegen die fertigen Dateien:
 
 | Datei | Für wen |
 |---|---|
-| **`Voci-Setup.exe`** | **Für Windows die empfohlene Fassung.** Installiert Voci an einen festen Ort, Zielordner frei wählbar, Desktop-Verknüpfung zum Ankreuzen, **keine Adminrechte nötig**. Damit funktionieren auch die Updates zuverlässig. |
-| `Voci-Windows-Ordner.zip` | Ohne Installation: entpacken, `Voci.exe` im Ordner starten. |
-| `Voci.exe` | Windows als eine einzige Datei – bequemer, wird aber von Virenscannern gerne fälschlich gemeldet. |
-| **`Voci-Setup.pkg`** | **Für macOS (Apple Silicon, M1–M4) die empfohlene Fassung.** Installiert Voci in den Ordner *Programme* — auf Wunsch **nur für dich** (`~/Applications`, ohne Adminrechte) oder für alle Benutzer — und startet es gleich. Die installierte App läuft danach ohne Gatekeeper-Meldung. |
-| `Voci-macOS.zip` | macOS mit Apple Silicon ohne Installation. Entpacken, `Voci.app` starten. |
+| **`Voci-Setup.exe`** | **Für Windows.** Installiert Voci an einen festen Ort, Zielordner frei wählbar, Desktop-Verknüpfung zum Ankreuzen, **keine Adminrechte nötig**. Updates spielt Voci später selbst über dieses Setup ein. |
+| **`Voci-Setup.pkg`** | **Für macOS (Apple Silicon, M1–M4).** Installiert Voci in den Ordner *Programme* — auf Wunsch **nur für dich** (`~/Applications`, ohne Adminrechte) oder für alle Benutzer — und startet es gleich. Die installierte App läuft danach ohne Gatekeeper-Meldung. |
 | `Voci.pyw` | Alle Systeme mit installiertem Python – die einzige Variante ganz ohne Warnung. Braucht einmalig `pip install PySide6`. |
 
-Auf **Intel-Macs** läuft die `Voci-macOS.zip` nicht; dort nimmst du die `Voci.pyw`,
+Auf **Intel-Macs** läuft das Paket nicht; dort nimmst du die `Voci.pyw`,
 installierst einmalig `pip3 install PySide6` und startest mit `python3 Voci.pyw`.
 
 Alles wird bei jeder Änderung automatisch von GitHub Actions neu gebaut
@@ -87,16 +84,11 @@ Versionsinformationen und keine UPX-Komprimierung.
 
 Falls ein Scanner trotzdem anschlägt:
 
-1. Nimm die **Ordner-Variante** (`Voci-Windows-Ordner.zip`) — die entpackt sich
-   beim Start nicht selbst und ist genau dafür da. Die Einzeldatei `Voci.exe`
-   lässt sich dagegen nicht zuverlässig fehlalarmfrei bauen: Dass ein Programm
-   sich beim Start selbst entpackt, ist nun einmal auch ein Malware-Verhalten,
-   und ohne Signatur fehlt der Gegenbeweis.
-2. Oder melde den Fehlalarm dem Hersteller. Für Microsoft Defender geht das hier:
+1. Melde den Fehlalarm dem Hersteller. Für Microsoft Defender geht das hier:
    [Datei zur Analyse einreichen](https://www.microsoft.com/en-us/wdsi/filesubmission).
    Solche Meldungen werden meist innert weniger Tage korrigiert und gelten dann
    für alle.
-3. Ganz ohne EXE: die `Voci.pyw` mit installiertem Python starten.
+2. Ganz ohne EXE: die `Voci.pyw` mit installiertem Python starten.
 
 ## Bedienung
 
@@ -335,8 +327,8 @@ Datei wird verworfen; dann bleibt die eingebaute Liste in Betrieb.
 
 **Programm.** Ebenfalls beim Start prüft Voci, ob es eine neuere Fassung gibt.
 Falls ja, erscheint unten auf der Karte dezent *„Update verfügbar · Taste u"*.
-Ein Druck auf **u** lädt die passende Datei, tauscht sie aus und startet das
-Programm neu.
+Ein Druck auf **u** lädt das passende Installationsprogramm und lässt es die
+Dateien austauschen.
 
 Ein paar Entscheidungen dahinter:
 
@@ -344,18 +336,23 @@ Ein paar Entscheidungen dahinter:
   GitHub-API. Das ist eine gewöhnliche Webanfrage und läuft damit nicht in das
   API-Limit von 60 Abfragen pro Stunde und IP-Adresse — in einem Schulnetz
   hinter einer gemeinsamen Adresse wäre das sonst schnell erreicht.
-- Ein laufendes Programm kann sich unter Windows nicht selbst überschreiben.
-  Deshalb schreibt Voci ein kleines Hilfsskript, das wartet, bis das Programm
-  beendet ist, dann tauscht und neu startet.
-- Getauscht wird erst, wenn die neue Fassung vollständig heruntergeladen und
-  entpackt ist. Die alte wird beiseitegelegt und erst gelöscht, wenn die neue
-  steht; scheitert der Tausch, kommt die alte zurück.
-- Alle Netzzugriffe laufen in Hintergrundfäden mit kurzem Zeitlimit und werden
-  bei Fehlern still verworfen. Ohne Internet startet und läuft Voci normal.
-
-Welche Datei geholt wird, hängt davon ab, wie Voci installiert ist: die
-Ordnerfassung ersetzt ihren Ordner, die Einzeldatei sich selbst, das
-macOS-Bundle sich selbst.
+- Ein laufendes Programm kann sich nicht selbst überschreiben. Deshalb
+  schreibt Voci ein kleines Hilfsskript, das wartet, bis das Programm beendet
+  ist, und dann das Installationsprogramm startet.
+- **Eingespielt wird über dasselbe Setup, mit dem installiert wurde**, nicht
+  durch Kopieren von Hand. Früher spiegelte Voci den Programmordner selbst.
+  Lag er in einem geschützten Ordner, scheiterte das still, die alte Fassung
+  lief weiter und bot beim nächsten Start dasselbe Update wieder an — endlos.
+  Das Setup holt sich nötigenfalls Administratorrechte und lässt seinen
+  Deinstallations-Eintrag heil. Unter macOS spielt das Paket still ein, wenn
+  Voci im eigenen Benutzerordner liegt; im Ordner *Programme* öffnet sich das
+  Installationsprogramm sichtbar.
+- Für HTTPS bringt Voci eigene Wurzelzertifikate mit (`certifi`). Ohne die
+  scheiterte in der gebündelten macOS-App jede Anfrage, und es erschien dort
+  nie ein Update.
+- Alle Netzzugriffe laufen in Hintergrundfäden mit kurzem Zeitlimit. Bei
+  Fehlern läuft Voci normal weiter; was schiefging, steht in `update.log`
+  neben den Einstellungen.
 
 ## Vokabeln ändern
 

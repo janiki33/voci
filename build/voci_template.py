@@ -35,10 +35,10 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unicodedata
 import urllib.error
 import urllib.request
-import zipfile
 
 try:
     from PySide6.QtCore import (Qt, QTimer, QRectF, QPointF, QVariantAnimation,
@@ -447,9 +447,41 @@ def wertung_farbe(prozent):
     return blend(gelb, gruen, (prozent - 50) / 50.0)
 
 
+def protokoll(text):
+    """Notiz neben den Einstellungen. Ohne die stand man bei einem
+    fehlgeschlagenen Update im Dunkeln - besonders auf macOS, wo die
+    Versionsabfrage still scheiterte und nie ein Update erschien."""
+    try:
+        with (datenordner() / "update.log").open("a", encoding="utf-8") as datei:
+            datei.write("%s  %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), text))
+    except Exception:
+        pass
+
+
+def _ssl_kontext():
+    """Wurzelzertifikate für HTTPS. Gebündelte macOS-Anwendungen bringen die
+    Zertifikate des Systems nicht zwingend mit; ohne sie scheitert jede
+    Anfrage und das Update erscheint dort gar nicht erst."""
+    try:
+        import ssl
+    except Exception:
+        return None
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        pass
+    try:
+        return ssl.create_default_context()
+    except Exception:
+        return None
+
+
 def _hole(adresse, timeout=NETZ_TIMEOUT):
     anfrage = urllib.request.Request(adresse, headers={"User-Agent": "Voci"})
-    with urllib.request.urlopen(anfrage, timeout=timeout) as antwort:
+    kontext = _ssl_kontext()
+    zusatz = {"context": kontext} if kontext is not None else {}
+    with urllib.request.urlopen(anfrage, timeout=timeout, **zusatz) as antwort:
         return antwort.read()
 
 
@@ -476,7 +508,11 @@ def neueste_version():
         def redirect_request(self, *args, **kwargs):
             return None
 
-    oeffner = urllib.request.build_opener(OhneWeiterleitung)
+    kontext = _ssl_kontext()
+    handler = [OhneWeiterleitung]
+    if kontext is not None:
+        handler.append(urllib.request.HTTPSHandler(context=kontext))
+    oeffner = urllib.request.build_opener(*handler)
     anfrage = urllib.request.Request(RELEASE_URL, headers={"User-Agent": "Voci"})
     try:
         with oeffner.open(anfrage, timeout=NETZ_TIMEOUT) as antwort:
@@ -489,158 +525,170 @@ def neueste_version():
 
 
 def installation():
-    """Was müsste ein Update ersetzen - eine Datei oder ein ganzer Ordner?"""
-    if "__compiled__" in globals():                  # mit Nuitka gebaut
-        pfad = pathlib.Path(sys.argv[0]).resolve()
+    """Wie läuft Voci gerade - davon hängt ab, wie ein Update eingespielt wird.
+
+    'setup-win'  installierte Windows-Fassung; das Update lässt
+                 Voci-Setup.exe die Dateien austauschen
+    'setup-mac'  Voci.app; das Update lässt Voci-Setup.pkg arbeiten
+    'quelle'     direkt gestartete Voci.pyw; die Datei wird ersetzt
+
+    Früher kopierte der Updater die Dateien selbst über den Programmordner.
+    Lag Voci in einem geschützten Ordner, scheiterte das still, die alte
+    Fassung lief weiter und bot beim nächsten Start wieder dasselbe Update
+    an - endlos. Die Installationsprogramme können sich die nötigen Rechte
+    holen und lassen ihren eigenen Deinstallations-Eintrag heil."""
+    kompiliert = "__compiled__" in globals() or getattr(sys, "frozen", False)
+    if not kompiliert:
+        return "quelle", pathlib.Path(__file__).resolve()
+    pfad = pathlib.Path(sys.argv[0] if "__compiled__" in globals()
+                        else sys.executable).resolve()
+    for eltern in pfad.parents:
+        if eltern.suffix == ".app":
+            return "setup-mac", eltern
+    if IS_WIN:
         if os.environ.get("NUITKA_ONEFILE_PARENT"):
-            return "einzeldatei", pfad
-        for eltern in pfad.parents:
-            if eltern.suffix == ".app":
-                return "ordner", eltern
-        return "ordner", pfad.parent
-    if getattr(sys, "frozen", False):                # mit PyInstaller gebaut
-        pfad = pathlib.Path(sys.executable).resolve()
-        for eltern in pfad.parents:
-            if eltern.suffix == ".app":
-                return "ordner", eltern
-        return "ordner", pfad.parent
-    return "einzeldatei", pathlib.Path(__file__).resolve()
+            return "setup-win", None     # Einzeldatei: Zielordner unbekannt
+        return "setup-win", pfad.parent
+    return None, None                    # dafür gibt es keine fertige Fassung
+
+
+def _beschreibbar(ordner):
+    """Darf hier ohne Nachfrage geschrieben werden? Entscheidet, ob das
+    Setup still durchlaufen kann oder sichtbar starten muss (damit Windows
+    nach Administratorrechten fragen kann)."""
+    try:
+        probe = pathlib.Path(ordner) / ".voci-schreibprobe"
+        probe.write_bytes(b"")
+        probe.unlink()
+        return True
+    except Exception:
+        return False
 
 
 def asset_name(art):
     """Welche Datei aus dem Release passt zu dieser Installation?"""
     if os.environ.get("VOCI_ASSET"):                 # nur für Tests
         return os.environ["VOCI_ASSET"]
-    if art == "einzeldatei":
-        if IS_WIN and "__compiled__" in globals():
-            return "Voci.exe"
-        return "Voci.pyw"
-    if IS_WIN:
-        return "Voci-Windows-Ordner.zip"
-    if IS_MAC:
-        return "Voci-macOS.zip"
-    return None                                      # dafür gibt es kein Release
+    return {"setup-win": "Voci-Setup.exe",
+            "setup-mac": "Voci-Setup.pkg",
+            "quelle": "Voci.pyw"}.get(art)
 
 
 def update_vorbereiten(art, ziel, arbeitsordner):
-    """Lädt die passende Datei und legt daneben, was nachher an die Stelle von
-    *ziel* rücken soll. Es wird noch nichts ersetzt."""
+    """Lädt die passende Datei aus dem Release. Ersetzt wird noch nichts."""
     name = asset_name(art)
     if not name:
         raise RuntimeError("für diese Fassung gibt es kein Update")
     rohdaten = _hole("%s/%s" % (DOWNLOAD_URL, name), timeout=120)
     arbeitsordner = pathlib.Path(arbeitsordner)
-
-    if not name.endswith(".zip"):
-        neu = arbeitsordner / ziel.name
-        neu.write_bytes(rohdaten)
-        if art == "einzeldatei" and not IS_WIN:
+    neu = arbeitsordner / (pathlib.Path(ziel).name if art == "quelle" else name)
+    neu.write_bytes(rohdaten)
+    if not IS_WIN:
+        try:
             neu.chmod(0o755)
-        return neu
-
-    paket = arbeitsordner / name
-    paket.write_bytes(rohdaten)
-    entpackt = arbeitsordner / "entpackt"
-    with zipfile.ZipFile(paket) as archiv:
-        archiv.extractall(entpackt)
-    inhalt = [p for p in entpackt.iterdir() if not p.name.startswith("__MACOSX")]
-    if len(inhalt) != 1 or not inhalt[0].is_dir():
-        raise RuntimeError("unerwarteter Inhalt im Archiv")
-    neu = inhalt[0]
-    if not any(neu.rglob("Voci*")):
-        raise RuntimeError("im Archiv fehlt das Programm")
-    for datei in neu.rglob("*"):                     # Rechte gehen im ZIP verloren
-        if datei.is_file() and (datei.suffix in ("", ".sh") or "MacOS" in datei.parts):
-            try:
-                datei.chmod(0o755)
-            except OSError:
-                pass
+        except OSError:
+            pass
     return neu
 
 
-def tausch_starten(ziel, neu, startbefehl):
-    """Startet ein Hilfsprogramm, das wartet, bis Voci beendet ist, und dann
-    tauscht - ein laufendes Programm kann sich nicht selbst ersetzen.
+def startbefehl_fuer(art, ziel):
+    """Womit Voci nach dem Update wieder startet."""
+    if art == "setup-mac":
+        return 'open "%s"' % ziel
+    if art == "setup-win":
+        return '"%s"' % (pathlib.Path(ziel) / "Voci.exe") if ziel else ""
+    if str(ziel).endswith(".pyw"):
+        return '"%s" "%s"' % (sys.executable, ziel)
+    return '"%s"' % ziel
 
-    Ordner werden gespiegelt statt verschoben: 'move' kann Verzeichnisse nicht
-    über Laufwerksgrenzen bewegen, und der temporäre Ordner liegt oft auf einem
-    anderen Laufwerk als die entpackte Anwendung. Ausserdem wird am Ende immer
-    neu gestartet - scheitert der Tausch, läuft wenigstens die alte Fassung
-    weiter, statt dass gar nichts mehr da ist. Was passiert ist, steht im
-    Protokoll neben den Einstellungen."""
+
+def _win_befehl(art, ziel, neu, log):
+    """Der eigentliche Austausch unter Windows."""
+    if art == "quelle":
+        return ('copy /y "%s" "%s" >>"%s" 2>&1\r\n'
+                'if errorlevel 1 (echo FEHLER copy >>"%s") '
+                'else (echo Datei ersetzt >>"%s")\r\n'
+                'start "" %s\r\n'
+                % (neu, ziel, log, log, log, startbefehl_fuer(art, ziel)))
+    # Das Setup tauscht die Dateien selbst aus. Still nur dort, wo wir ohne
+    # Nachfrage schreiben dürfen - sonst sichtbar, damit Windows nach
+    # Administratorrechten fragen kann statt still zu scheitern.
+    if ziel is not None and _beschreibbar(ziel):
+        return ('echo Setup still: %s >>"%s"\r\n'
+                '"%s" /SILENT /SUPPRESSMSGBOXES /NORESTART /DIR="%s" >>"%s" 2>&1\r\n'
+                'if errorlevel 1 (echo FEHLER Setup >>"%s") '
+                'else (echo Setup durchgelaufen >>"%s")\r\n'
+                'start "" %s\r\n'
+                % (ziel, log, neu, ziel, log, log, log,
+                   startbefehl_fuer(art, ziel)))
+    ordnerwahl = ' /DIR="%s"' % ziel if ziel is not None else ""
+    return ('echo Setup sichtbar >>"%s"\r\n'
+            'start "" "%s"%s\r\n' % (log, neu, ordnerwahl))
+
+
+def _unix_befehl(art, ziel, neu, log):
+    """Der eigentliche Austausch unter macOS und Linux."""
+    if art == "quelle":
+        return ('if cp -a "%s" "%s" >>"%s" 2>&1; then\n'
+                '  echo "Datei ersetzt" >>"%s"\n'
+                'else\n  echo "FEHLER beim Kopieren" >>"%s"\nfi\n'
+                '%s &\n'
+                % (neu, ziel, log, log, log, startbefehl_fuer(art, ziel)))
+    # Liegt Voci im eigenen Benutzerordner, spielt das Paket ohne Nachfrage
+    # ein; im Ordner Programme braucht es Rechte, dann öffnet sich das
+    # Installationsprogramm sichtbar und der Benutzer klickt durch.
+    if str(ziel).startswith(str(pathlib.Path.home())):
+        return ('if installer -pkg "%s" -target CurrentUserHomeDirectory '
+                '>>"%s" 2>&1; then\n'
+                '  echo "Paket eingespielt" >>"%s"\n'
+                '  %s\n'
+                'else\n'
+                '  echo "FEHLER installer - Paket wird geoeffnet" >>"%s"\n'
+                '  open "%s"\n'
+                'fi\n'
+                % (neu, log, log, startbefehl_fuer(art, ziel), log, neu))
+    return ('echo "Paket wird geoeffnet" >>"%s"\nopen "%s"\n' % (log, neu))
+
+
+def tausch_starten(art, ziel, neu):
+    """Startet ein Hilfsprogramm, das wartet, bis Voci beendet ist, und dann
+    die neue Fassung einspielt - ein laufendes Programm kann sich nicht
+    selbst ersetzen. Was dabei passiert ist, steht im Protokoll neben den
+    Einstellungen."""
     pid = os.getpid()
-    ordner = pathlib.Path(neu).is_dir()
     try:
-        protokoll = datenordner() / "update.log"
+        log = datenordner() / "update.log"
     except Exception:
-        protokoll = pathlib.Path(tempfile.gettempdir()) / "voci-update.log"
+        log = pathlib.Path(tempfile.gettempdir()) / "voci-update.log"
 
     if IS_WIN:
         skript = pathlib.Path(neu).parent / "voci_update.cmd"
-        if ordner:
-            # /MIR spiegelt den Ordner, /R und /W begrenzen Wiederholungen.
-            # robocopy meldet 0-7 als Erfolg, erst ab 8 ist etwas schiefgegangen.
-            tausch = ('robocopy "%s" "%s" /MIR /NFL /NDL /NJH /NJS /R:2 /W:1 '
-                      '>>"%s" 2>&1\r\n'
-                      'if errorlevel 8 (echo FEHLER robocopy >>"%s") '
-                      'else (echo Ordner ersetzt >>"%s")\r\n'
-                      % (neu, ziel, protokoll, protokoll, protokoll))
-        else:
-            tausch = ('copy /y "%s" "%s" >>"%s" 2>&1\r\n'
-                      'if errorlevel 1 (echo FEHLER copy >>"%s") '
-                      'else (echo Datei ersetzt >>"%s")\r\n'
-                      % (neu, ziel, protokoll, protokoll, protokoll))
         skript.write_text(
             "@echo off\r\n"
-            'echo ---- %%date%% %%time%% Update >>"{log}"\r\n'
+            'echo ---- %%date%% %%time%% Update ({art}) >>"{log}"\r\n'
             ":warten\r\n"
             'tasklist /fi "PID eq {pid}" 2>nul | find "{pid}" >nul\r\n'
             "if not errorlevel 1 (\r\n"
             "  timeout /t 1 /nobreak >nul\r\n"
             "  goto warten\r\n"
             ")\r\n"
-            "{tausch}"
-            'start "" {start}\r\n'.format(log=protokoll, pid=pid,
-                                           tausch=tausch, start=startbefehl),
+            "{befehl}".format(art=art, log=log, pid=pid,
+                              befehl=_win_befehl(art, ziel, neu, log)),
             encoding="utf-8")
         subprocess.Popen(["cmd", "/c", str(skript)], cwd=str(skript.parent),
                          creationflags=0x08000000)   # ohne Konsolenfenster
     else:
         skript = pathlib.Path(neu).parent / "voci_update.sh"
-        if ordner:
-            tausch = ('if cp -a "%s/." "%s/" >>"%s" 2>&1; then\n'
-                      '  echo "Ordner ersetzt" >>"%s"\n'
-                      'else\n  echo "FEHLER beim Kopieren" >>"%s"\nfi\n'
-                      % (neu, ziel, protokoll, protokoll, protokoll))
-        else:
-            tausch = ('if cp -a "%s" "%s" >>"%s" 2>&1; then\n'
-                      '  echo "Datei ersetzt" >>"%s"\n'
-                      'else\n  echo "FEHLER beim Kopieren" >>"%s"\nfi\n'
-                      % (neu, ziel, protokoll, protokoll, protokoll))
         skript.write_text(
             "#!/bin/sh\n"
-            'echo "---- $(date) Update" >>"%s"\n'
+            'echo "---- $(date) Update (%s)" >>"%s"\n'
             "while kill -0 %d 2>/dev/null; do sleep 0.5; done\n"
             "%s"
-            "%s &\n"
-            % (protokoll, pid, tausch, startbefehl),
+            % (art, log, pid, _unix_befehl(art, ziel, neu, log)),
             encoding="utf-8")
         skript.chmod(0o755)
         subprocess.Popen(["/bin/sh", str(skript)], cwd=str(skript.parent),
                          start_new_session=True)
-
-
-def startbefehl_fuer(art, ziel):
-    if art == "ordner":
-        if IS_MAC and str(ziel).endswith(".app"):
-            return 'open "%s"' % ziel
-        exe = pathlib.Path(ziel) / ("Voci.exe" if IS_WIN else "Voci")
-        return '"%s"' % exe
-    if str(ziel).endswith(".pyw"):
-        return '"%s" "%s"' % (sys.executable, ziel)
-    return '"%s"' % ziel
-
-
 
 
 # ---------------------------------------------------------------- Eigene Sets
@@ -3240,10 +3288,17 @@ class Voci:
     def _pruefe_version(self):
         try:
             neu = neueste_version()
-        except Exception:
+        except Exception as fehler:
+            protokoll("Versionsabfrage fehlgeschlagen: %r" % (fehler,))
             return
-        if neu and neu != VERSION:
-            self.update_version = neu
+        if not neu or neu == VERSION:
+            return
+        art, _ = installation()
+        if not asset_name(art):
+            protokoll("Neue Fassung %s, aber für diese Installation (%s) "
+                      "gibt es kein Paket" % (neu, art))
+            return
+        self.update_version = neu
 
     def update_hinweis(self):
         if self.update_status == "lädt":
@@ -3274,15 +3329,17 @@ class Voci:
             arbeitsordner = tempfile.mkdtemp(prefix="voci-update-")
             neu = update_vorbereiten(art, ziel, arbeitsordner)
             self.update_fertig = (art, ziel, neu)
-        except Exception:
+        except Exception as fehler:
+            protokoll("Herunterladen fehlgeschlagen: %r" % (fehler,))
             self.update_status = "fehlgeschlagen"
 
     def _tauschen(self):
         art, ziel, neu = self.update_fertig
         self.update_fertig = None
         try:
-            tausch_starten(ziel, neu, startbefehl_fuer(art, ziel))
-        except Exception:
+            tausch_starten(art, ziel, neu)
+        except Exception as fehler:
+            protokoll("Einspielen fehlgeschlagen: %r" % (fehler,))
             self.update_status = "fehlgeschlagen"
             return
         self.qapp.quit()

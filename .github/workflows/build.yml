@@ -44,7 +44,7 @@ jobs:
         env:
           VOCI_VERSION: ${{ needs.version.outputs.tag }}
         run: |
-          pip install --upgrade pillow PySide6 pdfplumber
+          pip install --upgrade pillow PySide6 pdfplumber certifi
           python build/make_icons.py
           python build/make_app.py
 
@@ -74,9 +74,11 @@ jobs:
             "--product-version=1.0.0.0"
             "--file-description=Voci - Vokabeltrainer Französisch/Deutsch"
             "--copyright=© 2026 Janosch Salzgeber"
+            # Wurzelzertifikate mitgeben, sonst kann die Versionsabfrage
+            # keine HTTPS-Verbindung prüfen
+            --include-package=certifi
+            --include-package-data=certifi
           )
-          python -m nuitka --mode=onefile --onefile-no-compression "${gemeinsam[@]}" \
-            --output-dir=nuitka-einzeldatei --output-filename=Voci.exe voci_main.py
           python -m nuitka --mode=standalone "${gemeinsam[@]}" \
             --output-dir=nuitka-ordner --output-filename=Voci.exe voci_main.py
 
@@ -84,10 +86,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          Copy-Item nuitka-einzeldatei/Voci.exe out/Voci.exe
           Copy-Item Voci.pyw out/Voci.pyw
           Rename-Item nuitka-ordner/voci_main.dist Voci
-          Compress-Archive -Path nuitka-ordner/Voci -DestinationPath out/Voci-Windows-Ordner.zip
           Copy-Item -Recurse nuitka-ordner/Voci setup-quelle
 
       # Das Setup legt die Anwendung an einen festen Ort - damit weiss der
@@ -120,7 +120,7 @@ jobs:
         env:
           VOCI_VERSION: ${{ needs.version.outputs.tag }}
         run: |
-          pip install --upgrade pillow PySide6 pdfplumber
+          pip install --upgrade pillow PySide6 pdfplumber certifi
           python build/make_icons.py
           python build/make_app.py
 
@@ -130,8 +130,12 @@ jobs:
       - name: App-Bundle bauen
         run: |
           cp Voci.pyw voci_main.py
+          # --collect-data certifi: ohne die Wurzelzertifikate scheitert in
+          # der gebündelten App jede HTTPS-Anfrage still, und es erschien nie
+          # ein Update.
           pyinstaller --windowed --noupx --name Voci \
             --icon assets/voci.icns --osx-bundle-identifier ch.janiki33.voci \
+            --collect-data certifi --hidden-import certifi \
             --workpath pyi-build voci_main.py
           PLIST=dist/Voci.app/Contents/Info.plist
           for eintrag in \
@@ -147,7 +151,6 @@ jobs:
           codesign --force --deep --sign - dist/Voci.app
           codesign --verify --deep dist/Voci.app && echo "Signatur in Ordnung"
           mkdir -p out
-          ditto -c -k --keepParent dist/Voci.app out/Voci-macOS.zip
 
       # Installer-Paket wie Voci-Setup.exe: legt die App an einen festen Ort
       # (~/Applications ohne Adminrechte oder /Applications), damit der
@@ -210,11 +213,8 @@ jobs:
 
           | Datei | Für wen |
           |---|---|
-          | **`Voci-Setup.exe`** | **Für Windows die empfohlene Fassung.** Installiert Voci an einen festen Ort, legt auf Wunsch eine Desktop-Verknüpfung an und macht damit auch die Updates zuverlässig. Der Zielordner ist im Setup frei wählbar, Adminrechte braucht es nicht. |
-          | `Voci-Windows-Ordner.zip` | Ohne Installation: entpacken und `Voci.exe` im Ordner starten. |
-          | `Voci.exe` | Windows als eine einzige Datei – bequemer, wird aber von Virenscannern gerne fälschlich gemeldet. Wenn das passiert: das Setup oder die Ordner-Fassung nehmen. |
-          | **`Voci-Setup.pkg`** | **Für macOS (Apple Silicon) die empfohlene Fassung.** Installiert Voci in den Ordner Programme (auf Wunsch nur für dich, ohne Adminrechte) und startet es. Die installierte App zeigt keine Gatekeeper-Meldung mehr - nur das Paket selbst einmal (siehe unten). |
-          | `Voci-macOS.zip` | macOS (Apple Silicon) ohne Installation: Entpacken, `Voci.app` starten. |
+          | **`Voci-Setup.exe`** | **Für Windows.** Installiert Voci an einen festen Ort, legt auf Wunsch eine Desktop-Verknüpfung an. Der Zielordner ist frei wählbar, Adminrechte braucht es nicht. Updates spielt Voci später selbst über dieses Setup ein. |
+          | **`Voci-Setup.pkg`** | **Für macOS (Apple Silicon).** Installiert Voci in den Ordner Programme (auf Wunsch nur für dich, ohne Adminrechte) und startet es. Die installierte App zeigt keine Gatekeeper-Meldung mehr - nur das Paket selbst einmal (siehe unten). |
           | `Voci.pyw` | Alle Systeme mit installiertem Python, ganz ohne Warnungen. |
 
           ### Windows warnt beim ersten Start
@@ -251,8 +251,9 @@ jobs:
           Signatur. Ausgelöst wird sie davon, dass eine Einzeldatei sich beim
           Start selbst entpackt – ein Verhalten, das auch Schadsoftware zeigt.
 
-          **Dann nimm `Voci-Windows-Ordner.zip`.** Die Fassung entpackt sich
-          nicht selbst und ist genau dafür da.
+          Das Setup ist davon deutlich seltener betroffen als eine einzelne
+          EXE. Wer ganz sichergehen will, nimmt die `Voci.pyw` mit
+          installiertem Python.
 
           Wer helfen will, kann den Fehlalarm bei Microsoft melden:
           [Datei zur Analyse einreichen](https://www.microsoft.com/en-us/wdsi/filesubmission).
