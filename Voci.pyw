@@ -230,6 +230,7 @@ STANDARD_EINSTELLUNGEN = {
     "taste_c": "C",               # kann ich nicht (austauschbar)
     "taste_v": "V",               # neutral (austauschbar)
     "taste_b": "B",               # kann ich (austauschbar)
+    "taste_flip": " ",            # aufdecken FR <-> DE (Standard: Leertaste)
     "taste_quit": "",             # Programm schliessen (standardmässig unbelegt)
     "hinweis_gesehen": False,     # Bedienungshinweis beim ersten Start
     "schatten": True,             # weicher Schatten unter den Fenstern
@@ -241,6 +242,11 @@ STANDARD_EINSTELLUNGEN = {
     "glas": False,                # alternativer Zeichenstil (nicht im Menü)
 }
 FESTE_TASTEN = {"D", "U", "M", "S"}  # dürfen nicht als Wertungstaste belegt werden
+
+
+def tastenname(zeichen):
+    """Anzeigename einer Belegung - die Leertaste hat kein sichtbares Zeichen."""
+    return "Leertaste" if zeichen == " " else zeichen
 
 # Bewertung: c = kann ich noch nicht, v = neutral, b = kann ich schon.
 # Jeder Eintrag trägt einen Faktor (Start 1), der die Ziehungswahrscheinlichkeit
@@ -1354,10 +1360,11 @@ class MenuFenster(Panel):
         g4 = Gruppe(a)
         kachelkaesten = []
         for kacheln, text, wofuer in (
+                ([tastenname(a.einst["taste_flip"])], "aufdecken", "flip"),
                 ([a.einst["taste_c"]], "kann ich nicht", "c"),
                 ([a.einst["taste_v"]], "neutral", "v"),
                 ([a.einst["taste_b"]], "kann ich schon", "b"),
-                ([a.einst["taste_quit"]], "Programm schliessen", "quit"),
+                ([tastenname(a.einst["taste_quit"])], "Programm schliessen", "quit"),
                 (["←", "→"], "zurück · weiter", None),
                 (["D"], "Dark Mode", None),
                 (["M"], "Menü", None),
@@ -1510,7 +1517,8 @@ class MenuFenster(Panel):
         schwer.triggered.connect(a.schwere_kippen)
         menue.addAction(schwer)
         liste = QAction("Wörterliste anzeigen", menue)
-        liste.triggered.connect(a.liste_zeigen)
+        # triggered liefert ein bool mit; darum ausdrücklich das Set weitergeben
+        liste.triggered.connect(lambda _=False, sz=satz: a.liste_zeigen(sz))
         menue.addAction(liste)
         if satz is not None and satz.get("eigen"):
             menue.addSeparator()
@@ -1569,13 +1577,17 @@ class HinweisFenster(Panel):
         tastenzeile([app.einst["taste_v"]], "neutral")
         tastenzeile([app.einst["taste_b"]], "kann ich schon (kommt seltener)")
         lay.addSpacing(4)
+        if not app.einst["schreibmodus"] and app.einst["taste_flip"]:
+            tastenzeile([tastenname(app.einst["taste_flip"])],
+                        "aufdecken (FR ↔ DE)")
         tastenzeile(["←", "→"], "blättern zurück und weiter")
         tastenzeile(["M"], "Menü (Einstellungen, Sets, Wörterliste)")
         tastenzeile(["D"], "Dark Mode")
         tastenzeile(["S"], "Schreibmodus an/aus")
         tastenzeile(["F1"], "diese Hilfe")
         if app.einst["taste_quit"]:
-            tastenzeile([app.einst["taste_quit"]], "Programm schliessen")
+            tastenzeile([tastenname(app.einst["taste_quit"])],
+                        "Programm schliessen")
         lay.addSpacing(4)
         if app.einst["immer_vorne"]:
             absatz("Das Fenster bleibt immer im Vordergrund - "
@@ -1745,8 +1757,11 @@ class FrageFenster(Panel):
 class ListeFenster(Panel):
     KANTE = 7                      # Greifzone zum Breiterziehen
 
-    def __init__(self, app):
-        super().__init__(app, "Wörterliste", 370, 430)
+    def __init__(self, app, satz=None):
+        """*satz* zeigt genau dieses Voci-Set; ohne Angabe die aktiven Sets."""
+        super().__init__(app, "Wörterliste" if satz is None
+                         else "Wörterliste – %s" % satz["name"], 370, 430)
+        self.satz = satz
         self.sortierung = getattr(app, "liste_sortierung", "wertung")
         self.regionen = {"close": self.close}
         self.frage = None
@@ -1816,7 +1831,8 @@ class ListeFenster(Panel):
 
     def reihenfolge(self):
         a = self.app
-        indizes = list(a.aktive_indizes())
+        indizes = list(self.satz["indizes"] if self.satz is not None
+                       else a.aktive_indizes())
         if self.sortierung == "wertung":
             indizes.sort(key=lambda i: (-wertung_prozent(a.faktor(i)),
                                         a.vocab[i]["fr"].lower()))
@@ -2676,13 +2692,14 @@ class Voci:
             wofuer = self.warte_auf_taste
             self.warte_auf_taste = None
             belegt = FESTE_TASTEN | {self.einst["taste_%s" % w]
-                                     for w in ("c", "v", "b", "quit")
+                                     for w in ("c", "v", "b", "flip", "quit")
                                      if w != wofuer and self.einst["taste_%s" % w]}
-            if key == Qt.Key.Key_Escape and wofuer == "quit":
+            if key == Qt.Key.Key_Escape and wofuer in ("quit", "flip"):
                 # Escape löscht die (optionale) Belegung wieder
-                self.einst["taste_quit"] = ""
+                self.einst["taste_%s" % wofuer] = ""
                 speichere_einstellungen(self.einst)
-            elif zeichen and zeichen.isalpha() and zeichen not in belegt:
+            elif zeichen and (zeichen.isalpha() or zeichen == " ") \
+                    and zeichen not in belegt:
                 self.einst["taste_%s" % wofuer] = zeichen
                 speichere_einstellungen(self.einst)
             if self.menu and self.menu.isVisible():
@@ -2692,6 +2709,11 @@ class Voci:
         if zeichen and self.einst["taste_quit"] \
                 and zeichen == self.einst["taste_quit"]:
             self.beenden()
+            return True
+        if zeichen and self.einst["taste_flip"] \
+                and zeichen == self.einst["taste_flip"] \
+                and not self.einst["schreibmodus"]:
+            self.flip()
             return True
         for wofuer in ("c", "v", "b"):
             if zeichen and zeichen == self.einst["taste_%s" % wofuer]:
@@ -2819,6 +2841,10 @@ class Voci:
         else:
             self.faktoren[schluessel] = wert
         speichere_faktoren(self.faktoren)
+        # Offene Wörterliste mitziehen, damit Prozente und die Sortierung
+        # nach Wertung sofort stimmen; der Takt bündelt schnelle Folgen.
+        if self.liste and self.liste.isVisible():
+            self.liste._fuell_takt.start(60)
 
     def aktive_indizes(self):
         indizes = []
@@ -3105,8 +3131,9 @@ class Voci:
             self.menu.show()
         if self.liste and self.liste.isVisible():
             pos = self.liste.pos()
+            satz = self.liste.satz
             self.liste.close()
-            self.liste = ListeFenster(self)
+            self.liste = ListeFenster(self, satz)
             self.liste.move(pos)
             self.liste.show()
 
@@ -3126,11 +3153,16 @@ class Voci:
         self.hinweis.show()
         self.hinweis.einblenden()
 
-    def liste_zeigen(self):
+    def liste_zeigen(self, satz=None):
+        """Ohne *satz* die aktiven Sets, sonst genau das gewählte Set."""
         if self.liste and self.liste.isVisible():
-            self.liste.raise_()
-            return
-        self.liste = ListeFenster(self)
+            offen = self.liste.satz["id"] if self.liste.satz else None
+            gewuenscht = satz["id"] if satz else None
+            if offen == gewuenscht:
+                self.liste.raise_()
+                return
+            self.liste.close()
+        self.liste = ListeFenster(self, satz)
         self.liste.show()
         self.liste.einblenden()
 

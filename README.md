@@ -113,6 +113,7 @@ Falls ein Scanner trotzdem anschlägt:
 | Taste **m** | Menü öffnen/schliessen (Einstellungen, Voci-Sets) |
 | Rechtsklick auf die Karte | Auswahl **Einstellungen** / **Voci-Sets** — öffnet das Menü direkt am passenden Tab |
 | Taste **F1** | Bedienungshinweis öffnen/schliessen (zeigt immer die aktuell belegten Tasten) |
+| **Leertaste** | Übersetzung aufdecken (wie ein Klick auf die Karte) – austauschbar, im Schreibmodus tippt sie normal |
 | Taste **c** / **v** / **b** | Wort bewerten: kann ich nicht / neutral / kann ich schon |
 | Pfeil **←** / **→** | zurück / weiter |
 
@@ -239,17 +240,22 @@ schreiben kann, kommen automatisch öfter.
   Schliess-Knopf (X) auf der Karte einzeln ausblendbar; Auto-Weiter an/aus
   und dessen Dauer (3/5/10 s), Startsprache, Beim Raustabben schliessen.
   Darunter die **Steuerung** als Übersicht mit Tasten-Kacheln — die drei
-  Bewertungstasten und *Programm schliessen* sind **austauschbar**: Kachel
-  anklicken, neue Taste drücken (D, U, M und bereits vergebene Tasten werden
-  abgelehnt; Esc entfernt die Quit-Belegung). Ganz unten steht die
+  Bewertungstasten sowie *aufdecken* und *Programm schliessen* sind
+  **austauschbar**: Kachel anklicken, neue Taste drücken (D, U, M und bereits
+  vergebene Tasten werden abgelehnt; Esc entfernt die Belegung von *aufdecken*
+  und *Programm schliessen*). Ganz unten steht die
   installierte **Version**. Alles wird gespeichert und beim nächsten Start
   wiederhergestellt.
 - **Voci-Sets:** Wortsets an- und abwählen (mehrere möglich; eingebaut sind
   *Étape 1* mit 243 Wörtern und *Fragewörter* mit den zehn französischen
   Fragewörtern où, qui, quand, que, qu'est-ce que, comment, combien,
   pourquoi, quel, quelle). Hinter **⋯** liegen *Schwere Wörter üben* (nur Wörter mit
-  Faktor ≥ 1) und *Wörterliste anzeigen*: sortierbar nach A–Z oder Wertung,
-  mit Farbpunkt und Prozent pro Wort. Das Listenfenster lässt sich **am
+  Faktor ≥ 1) und *Wörterliste anzeigen*. Die Liste zeigt dann genau das
+  Set, dessen **⋯** angeklickt wurde (der Name steht im Fenstertitel); über
+  die Tastenkombination im Menü ohne Set-Auswahl erscheinen die aktiven Sets.
+  Sortierbar nach A–Z oder Wertung,
+  mit Farbpunkt und Prozent pro Wort; die Sortierung nach Wertung zieht
+  **sofort mit**, sobald man ein Wort bewertet. Das Listenfenster lässt sich **am
   linken/rechten Rand breiter ziehen**, damit lange Wörter ganz zu sehen
   sind. Der rote ↺-Knopf setzt ein einzelnes Wort zurück — nach einer
   Rückfrage mit *Abbrechen*/*Zurücksetzen* und dem Kästchen „Diese Meldung
