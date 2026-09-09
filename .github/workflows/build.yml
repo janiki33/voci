@@ -225,23 +225,29 @@ jobs:
           **Weitere Informationen** anklicken, dann **Trotzdem ausführen**.
 
           Wer die Warnung gar nicht erst sehen will: Rechtsklick auf die
-          heruntergeladene `Voci.exe` → **Eigenschaften** → unten bei *Sicherheit*
-          den Haken bei **Zulassen** setzen -> **OK**.
+          heruntergeladene `Voci-Setup.exe` → **Eigenschaften** → unten bei
+          *Sicherheit* den Haken bei **Zulassen** setzen -> **OK**.
+
+          Die Meldung gilt dem Setup. Das installierte Voci startet danach ohne
+          Nachfrage, auch nach Updates.
 
           ### macOS warnt beim ersten Start
 
-          *"Voci" kann nicht geöffnet werden, da Apple es nicht auf Schadsoftware
-          überprüfen kann.* Auch das ist keine Virenmeldung, sondern die fehlende
-          Apple-Signatur (99 USD pro Jahr).
+          *"Voci-Setup.pkg" kann nicht geöffnet werden, da Apple es nicht auf
+          Schadsoftware überprüfen kann.* Auch das ist keine Virenmeldung,
+          sondern die fehlende Apple-Signatur (99 USD pro Jahr). Sie gilt dem
+          Paket, nicht dem Programm.
 
           - **macOS 15 (Sequoia) und neuer:** Doppelklick, Meldung wegklicken, dann
             **Systemeinstellungen → Datenschutz & Sicherheit** öffnen, ganz nach
             unten scrollen und dort **Dennoch öffnen** wählen.
-          - **macOS 14 und älter:** Rechtsklick (oder Ctrl-Klick) auf `Voci.app`
-            → **Öffnen** → im Dialog nochmals **Öffnen**.
-          - **Per Terminal:** `xattr -dr com.apple.quarantine /Pfad/zu/Voci.app`
+          - **macOS 14 und älter:** Rechtsklick (oder Ctrl-Klick) auf
+            `Voci-Setup.pkg` → **Öffnen** → im Dialog nochmals **Öffnen**.
+          - **Per Terminal:**
+            `xattr -dr com.apple.quarantine /Pfad/zu/Voci-Setup.pkg`
 
-          Beides ist einmal pro heruntergeladener Datei nötig.
+          Was der Installer kopiert, trägt keine Quarantäne-Markierung - die
+          installierte App zeigt die Meldung nicht mehr.
 
           ### Virenscanner meldet eine Bedrohung
 

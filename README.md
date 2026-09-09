@@ -28,38 +28,42 @@ Alles wird bei jeder Änderung automatisch von GitHub Actions neu gebaut
 
 ### Windows warnt beim ersten Start
 
-Beim Start der EXE kommt **„Der Computer wurde durch Windows geschützt"**. Das ist
-keine Virenmeldung — Windows warnt bei jedem Programm ohne gekauftes
-Signaturzertifikat. Unter *Weitere Informationen* steht deshalb **„Unbekannter
-Herausgeber"**: Diese Zeile speist sich ausschliesslich aus der digitalen
-Signatur, nicht aus den Dateiangaben. Ohne Zertifikat lässt sie sich nicht
-ändern. Wer der Urheber ist, steht aber in den Dateieigenschaften — Rechtsklick
-auf `Voci.exe` → *Eigenschaften* → *Details*: **Janosch Salzgeber**.
+Beim Start von `Voci-Setup.exe` kommt **„Der Computer wurde durch Windows
+geschützt"**. Das ist keine Virenmeldung — Windows warnt bei jedem Programm ohne
+gekauftes Signaturzertifikat. Unter *Weitere Informationen* steht deshalb
+**„Unbekannter Herausgeber"**: Diese Zeile speist sich ausschliesslich aus der
+digitalen Signatur, nicht aus den Dateiangaben. Ohne Zertifikat lässt sie sich
+nicht ändern. Wer der Urheber ist, steht aber in den Dateieigenschaften —
+Rechtsklick auf `Voci-Setup.exe` → *Eigenschaften* → *Details*:
+**Janosch Salzgeber**.
 
 Zwei Wege an der Warnung vorbei:
 
 - Im Warnfenster auf **Weitere Informationen** → **Trotzdem ausführen**.
-- Oder vorher: Rechtsklick auf die heruntergeladene `Voci.exe` → **Eigenschaften**
-  → unten bei *Sicherheit* den Haken bei **Zulassen** setzen → **OK**.
+- Oder vorher: Rechtsklick auf die heruntergeladene `Voci-Setup.exe` →
+  **Eigenschaften** → unten bei *Sicherheit* den Haken bei **Zulassen** setzen
+  → **OK**.
+
+Die Meldung kommt nur beim Setup. Das installierte Voci startet danach ohne
+Nachfrage, auch nach Updates.
 
 ### macOS warnt beim ersten Start
 
-**„Voci" kann nicht geöffnet werden, da Apple es nicht auf Schadsoftware
-überprüfen kann.** Auch das ist keine Virenmeldung, sondern die fehlende
-Apple-Signatur (99 USD pro Jahr für ein Entwicklerkonto).
+**„Voci-Setup.pkg" kann nicht geöffnet werden, da Apple es nicht auf
+Schadsoftware überprüfen kann.** Auch das ist keine Virenmeldung, sondern die
+fehlende Apple-Signatur (99 USD pro Jahr für ein Entwicklerkonto). Sie gilt dem
+Paket, nicht dem Programm:
 
 - **macOS 15 (Sequoia) und neuer:** Doppelklick, Meldung wegklicken, dann
   **Systemeinstellungen → Datenschutz & Sicherheit** öffnen, ganz nach unten
   scrollen und dort **Dennoch öffnen** wählen (mit Touch ID oder Passwort
   bestätigen).
-- **macOS 14 und älter:** Rechtsklick (oder Ctrl-Klick) auf `Voci.app` →
+- **macOS 14 und älter:** Rechtsklick (oder Ctrl-Klick) auf `Voci-Setup.pkg` →
   **Öffnen** → im Dialog nochmals **Öffnen**.
-- **Per Terminal:** `xattr -dr com.apple.quarantine /Pfad/zu/Voci.app`
+- **Per Terminal:** `xattr -dr com.apple.quarantine /Pfad/zu/Voci-Setup.pkg`
 
-Mit `Voci-Setup.pkg` kommt die Meldung nur **einmal für das Paket** (gleiche
-Wege wie oben, nur mit Rechtsklick auf die `.pkg`-Datei). Was der Installer
-kopiert, trägt keine Quarantäne-Markierung — die installierte App startet
-danach ohne Nachfrage, auch nach Updates.
+Was der Installer kopiert, trägt keine Quarantäne-Markierung — die installierte
+App startet danach ohne Nachfrage, auch nach Updates.
 
 Beides ist einmal pro heruntergeladener Datei nötig. Ganz wegbekommen liesse sich
 die Warnung nur über den jeweiligen App-Store: Laut
@@ -272,8 +276,8 @@ lassen sich wählen:
 Deinstalliert wird regulär über *Apps & Features*.
 
 Der Hauptgrund für das Setup ist der Updater: Wenn Voci an einem festen Ort
-liegt, weiss er genau, wo er die Dateien austauschen muss. Bei einer irgendwo
-entpackten ZIP hängt das davon ab, wohin sie entpackt wurde.
+liegt, weiss er genau, wo er die Dateien austauschen muss. Er startet dann für ein Update einfach
+dasselbe Setup noch einmal.
 
 ## Installation unter macOS
 
@@ -286,8 +290,8 @@ wählen:
   gehört danach trotzdem dir, damit der Updater sie austauschen kann)
 
 Nach der Installation startet Voci automatisch und liegt im Launchpad. Was
-der Installer kopiert, trägt keine Quarantäne-Markierung — anders als bei
-der ZIP zeigt die App selbst darum keine Gatekeeper-Meldung mehr.
+der Installer kopiert, trägt keine Quarantäne-Markierung — die App selbst
+zeigt darum keine Gatekeeper-Meldung mehr.
 Deinstallieren heisst hier wie bei jeder Mac-App: `Voci.app` in den
 Papierkorb ziehen (Einstellungen und Wertungen liegen in
 `~/Library/Application Support/Voci`).
@@ -364,7 +368,7 @@ lauffähig ist:
 python build/make_app.py
 ```
 
-Beim Push auf `main` baut GitHub Actions daraus automatisch eine neue `Voci.exe`.
+Beim Push auf `main` baut GitHub Actions daraus automatisch ein neues Release.
 Für neue Vokabeln genügt aber schon die Änderung an `vokabeln.json` — laufende
 Installationen holen sie sich beim nächsten Start von selbst.
 
