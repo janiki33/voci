@@ -275,6 +275,14 @@ lassen sich wählen:
 
 Deinstalliert wird regulär über *Apps & Features*.
 
+Wer Voci vor dem 10.09.2026 installiert hat, bekommt dort unter Umständen
+*„unins000.exe konnte nicht gefunden werden"*: Der frühere Updater spiegelte
+den Programmordner und löschte dabei das Deinstallationsprogramm, das erst
+beim Installieren entsteht. Voci merkt das seither beim Start und legt die
+Datei über das Setup still wieder an — beim nächsten Beenden, ohne Fenster
+und ohne Nachfrage. Was dabei passiert ist, steht in `update.log` neben den
+Einstellungen.
+
 Der Hauptgrund für das Setup ist der Updater: Wenn Voci an einem festen Ort
 liegt, weiss er genau, wo er die Dateien austauschen muss. Er startet dann für ein Update einfach
 dasselbe Setup noch einmal.

@@ -574,6 +574,78 @@ def asset_name(art):
             "quelle": "Voci.pyw"}.get(art)
 
 
+SETUP_APPID = "{7F2C1E4A-9B3D-4C58-A6E1-VOCI00000001}_is1"
+REPARATUR_ABSTAND = 24 * 3600
+
+
+def _uninstaller_eintrag():
+    """Der Eintrag, mit dem Voci unter Windows in "Apps & Features" steht -
+    mit dem Ordner und dem Deinstallationsprogramm, die er nennt."""
+    try:
+        import winreg
+    except Exception:
+        return None
+    pfad = ("Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"
+            + SETUP_APPID)
+    for wurzel in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            with winreg.OpenKey(wurzel, pfad) as schluessel:
+                ordner = winreg.QueryValueEx(schluessel, "InstallLocation")[0]
+                programm = winreg.QueryValueEx(schluessel, "UninstallString")[0]
+        except OSError:
+            continue
+        return pathlib.Path(ordner), pathlib.Path(programm.strip('"'))
+    return None
+
+
+def reparatur_noetig():
+    """Steht Voci in "Apps & Features", fehlt aber das Programm, das der
+    Eintrag zum Deinstallieren aufruft?
+
+    Genau das hat der frühere Updater angerichtet: Er spiegelte den
+    Programmordner und löschte dabei alles, was nicht aus dem Release kam -
+    also auch unins000.exe, die das Setup erst beim Installieren anlegt.
+    Der Eintrag zeigt seither ins Leere, und Windows meldet beim
+    Deinstallieren "konnte nicht gefunden werden".
+
+    Zurück kommt der Ordner, den das Setup wieder herrichten soll, sonst
+    None. Ohne Eintrag in der Registrierung geschieht nichts: Ein von Hand
+    entpackter Ordner soll nicht ungefragt zu einer Installation werden."""
+    art, ziel = installation()
+    if art != "setup-win" or ziel is None:
+        return None
+    eintrag = _uninstaller_eintrag()
+    if not eintrag:
+        return None
+    ordner, programm = eintrag
+    try:
+        if ordner.resolve() != pathlib.Path(ziel).resolve():
+            return None              # der Eintrag meint eine andere Installation
+    except OSError:
+        return None
+    if programm.exists():
+        return None
+    return pathlib.Path(ziel)
+
+
+def reparatur_gesperrt():
+    """Ein misslungener Versuch soll nicht bei jedem Start das ganze Setup
+    nachladen."""
+    try:
+        marke = datenordner() / "reparatur.marke"
+        return time.time() - marke.stat().st_mtime < REPARATUR_ABSTAND
+    except OSError:
+        return False
+
+
+def reparatur_vermerken():
+    try:
+        (datenordner() / "reparatur.marke").write_text(
+            time.strftime("%Y-%m-%d %H:%M:%S"), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def update_vorbereiten(art, ziel, arbeitsordner):
     """Lädt die passende Datei aus dem Release. Ersetzt wird noch nichts."""
     name = asset_name(art)
@@ -602,14 +674,17 @@ def startbefehl_fuer(art, ziel):
     return '"%s"' % ziel
 
 
-def _win_befehl(art, ziel, neu, log):
-    """Der eigentliche Austausch unter Windows."""
+def _win_befehl(art, ziel, neu, log, neustart=True):
+    """Der eigentliche Austausch unter Windows. Ohne neustart bleibt Voci
+    danach zu - so läuft die stille Reparatur des Deinstallationsprogramms,
+    die der Benutzer weder angestossen hat noch bemerken soll."""
+    starten = 'start "" %s\r\n' % startbefehl_fuer(art, ziel) if neustart else ""
     if art == "quelle":
         return ('copy /y "%s" "%s" >>"%s" 2>&1\r\n'
                 'if errorlevel 1 (echo FEHLER copy >>"%s") '
                 'else (echo Datei ersetzt >>"%s")\r\n'
-                'start "" %s\r\n'
-                % (neu, ziel, log, log, log, startbefehl_fuer(art, ziel)))
+                '%s'
+                % (neu, ziel, log, log, log, starten))
     # Das Setup tauscht die Dateien selbst aus. Still nur dort, wo wir ohne
     # Nachfrage schreiben dürfen - sonst sichtbar, damit Windows nach
     # Administratorrechten fragen kann statt still zu scheitern.
@@ -618,22 +693,22 @@ def _win_befehl(art, ziel, neu, log):
                 '"%s" /SILENT /SUPPRESSMSGBOXES /NORESTART /DIR="%s" >>"%s" 2>&1\r\n'
                 'if errorlevel 1 (echo FEHLER Setup >>"%s") '
                 'else (echo Setup durchgelaufen >>"%s")\r\n'
-                'start "" %s\r\n'
-                % (ziel, log, neu, ziel, log, log, log,
-                   startbefehl_fuer(art, ziel)))
+                '%s'
+                % (ziel, log, neu, ziel, log, log, log, starten))
     ordnerwahl = ' /DIR="%s"' % ziel if ziel is not None else ""
     return ('echo Setup sichtbar >>"%s"\r\n'
             'start "" "%s"%s\r\n' % (log, neu, ordnerwahl))
 
 
-def _unix_befehl(art, ziel, neu, log):
+def _unix_befehl(art, ziel, neu, log, neustart=True):
     """Der eigentliche Austausch unter macOS und Linux."""
+    starten = startbefehl_fuer(art, ziel) if neustart else ":"
     if art == "quelle":
         return ('if cp -a "%s" "%s" >>"%s" 2>&1; then\n'
                 '  echo "Datei ersetzt" >>"%s"\n'
                 'else\n  echo "FEHLER beim Kopieren" >>"%s"\nfi\n'
                 '%s &\n'
-                % (neu, ziel, log, log, log, startbefehl_fuer(art, ziel)))
+                % (neu, ziel, log, log, log, starten))
     # Liegt Voci im eigenen Benutzerordner, spielt das Paket ohne Nachfrage
     # ein; im Ordner Programme braucht es Rechte, dann öffnet sich das
     # Installationsprogramm sichtbar und der Benutzer klickt durch.
@@ -646,11 +721,11 @@ def _unix_befehl(art, ziel, neu, log):
                 '  echo "FEHLER installer - Paket wird geoeffnet" >>"%s"\n'
                 '  open "%s"\n'
                 'fi\n'
-                % (neu, log, log, startbefehl_fuer(art, ziel), log, neu))
+                % (neu, log, log, starten, log, neu))
     return ('echo "Paket wird geoeffnet" >>"%s"\nopen "%s"\n' % (log, neu))
 
 
-def tausch_starten(art, ziel, neu):
+def tausch_starten(art, ziel, neu, neustart=True):
     """Startet ein Hilfsprogramm, das wartet, bis Voci beendet ist, und dann
     die neue Fassung einspielt - ein laufendes Programm kann sich nicht
     selbst ersetzen. Was dabei passiert ist, steht im Protokoll neben den
@@ -673,7 +748,8 @@ def tausch_starten(art, ziel, neu):
             "  goto warten\r\n"
             ")\r\n"
             "{befehl}".format(art=art, log=log, pid=pid,
-                              befehl=_win_befehl(art, ziel, neu, log)),
+                              befehl=_win_befehl(art, ziel, neu, log,
+                                                 neustart)),
             encoding="utf-8")
         subprocess.Popen(["cmd", "/c", str(skript)], cwd=str(skript.parent),
                          creationflags=0x08000000)   # ohne Konsolenfenster
@@ -684,7 +760,7 @@ def tausch_starten(art, ziel, neu):
             'echo "---- $(date) Update (%s)" >>"%s"\n'
             "while kill -0 %d 2>/dev/null; do sleep 0.5; done\n"
             "%s"
-            % (art, log, pid, _unix_befehl(art, ziel, neu, log)),
+            % (art, log, pid, _unix_befehl(art, ziel, neu, log, neustart)),
             encoding="utf-8")
         skript.chmod(0o755)
         subprocess.Popen(["/bin/sh", str(skript)], cwd=str(skript.parent),
@@ -2733,6 +2809,7 @@ class Tastenfilter(QObject):
 class Voci:
     def __init__(self, qapp):
         self.qapp = qapp
+        self.qapp.aboutToQuit.connect(self._beim_beenden)
         self.einst = lade_einstellungen()
         self.faktoren = lade_faktoren()
         self.import_status = None       # Text im Sets-Tab (lädt/Fehler)
@@ -2754,6 +2831,7 @@ class Voci:
         self.update_version = None
         self.update_status = None
         self.update_fertig = None
+        self.reparatur_fertig = None
         self.menu = None
         self.liste = None
         self.hinweis = None
@@ -3291,14 +3369,53 @@ class Voci:
         except Exception as fehler:
             protokoll("Versionsabfrage fehlgeschlagen: %r" % (fehler,))
             return
-        if not neu or neu == VERSION:
+        if neu and neu != VERSION:
+            art, _ = installation()
+            if not asset_name(art):
+                protokoll("Neue Fassung %s, aber für diese Installation (%s) "
+                          "gibt es kein Paket" % (neu, art))
+            else:
+                self.update_version = neu
+                return       # das Update setzt den Ordner ohnehin neu auf
+        self._pruefe_reparatur()
+
+    def _pruefe_reparatur(self):
+        """Fehlt das Deinstallationsprogramm, wird das Setup im Hintergrund
+        geladen und beim Beenden still eingespielt - ohne Fenster, ohne
+        Nachfrage. Es legt unins000.exe wieder an, danach lässt sich Voci
+        über "Apps & Features" ganz normal entfernen."""
+        ziel = reparatur_noetig()
+        if ziel is None:
             return
-        art, _ = installation()
-        if not asset_name(art):
-            protokoll("Neue Fassung %s, aber für diese Installation (%s) "
-                      "gibt es kein Paket" % (neu, art))
+        if not _beschreibbar(ziel):
+            protokoll("Deinstallationsprogramm fehlt in %s, dort darf aber "
+                      "nicht ohne Nachfrage geschrieben werden" % ziel)
             return
-        self.update_version = neu
+        if reparatur_gesperrt():
+            return
+        reparatur_vermerken()
+        protokoll("Deinstallationsprogramm fehlt in %s - Setup wird geladen"
+                  % ziel)
+        try:
+            arbeitsordner = tempfile.mkdtemp(prefix="voci-reparatur-")
+            neu = update_vorbereiten("setup-win", ziel, arbeitsordner)
+        except Exception as fehler:
+            protokoll("Reparatur fehlgeschlagen: %r" % (fehler,))
+            return
+        self.reparatur_fertig = (ziel, neu)
+
+    def _beim_beenden(self):
+        """Voci muss zu sein, bevor das Setup den Ordner anfassen darf - ein
+        laufendes Programm lässt sich nicht überschreiben."""
+        if not self.reparatur_fertig:
+            return
+        ziel, neu = self.reparatur_fertig
+        self.reparatur_fertig = None
+        try:
+            tausch_starten("setup-win", ziel, neu, neustart=False)
+            protokoll("Reparatur angestossen für %s" % ziel)
+        except Exception as fehler:
+            protokoll("Reparatur konnte nicht starten: %r" % (fehler,))
 
     def update_hinweis(self):
         if self.update_status == "lädt":
